@@ -17,6 +17,17 @@ echo "== Checking MIQ database status =="
 [[ -d /var/opt/rh/rh-postgresql95/lib/pgsql/data/base ]]
 if [ $? -eq 0 ]; then
   echo "** DB already initialized"
+
+  echo "** Starting postgresql"
+  su postgres -c "pg_ctl -D ${APPLIANCE_PG_DATA} start"
+  test $? -ne 0 && echo "!! Failed to start postgresql service" && exit 1
+
+  sleep 5
+  
+  # Check if memcached is running, if not start it
+  pidof memcached
+  test $? -ne 0 && /usr/bin/memcached -u memcached -p 11211 -m 64 -c 1024 -l 127.0.0.1 -d
+  
   exit 0
 else
   echo "** DB has not been initialized"
