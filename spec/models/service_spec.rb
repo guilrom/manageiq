@@ -452,6 +452,8 @@ describe Service do
           expect(args).to include(:class_name  => described_class.name,
                                   :method_name => "generate_chargeback_report",
                                   :args        => {:report_source => "Test Run"})
+          expect(args).to have_key(:miq_task_id)
+          expect(args).to have_key(:miq_callback)
         end
         expect(@service.queue_chargeback_report_generation(:report_source => "Test Run")).to be_kind_of(MiqTask)
       end
@@ -672,6 +674,31 @@ describe Service do
     it "cannot be nil" do
       service = FactoryGirl.build(:service, :display => nil)
       expect(service).not_to be_valid
+    end
+  end
+
+  describe "#retireable?" do
+    let(:service_with_type) { FactoryBot.create(:service, :type => "thing") }
+    let(:service_without_type) { FactoryBot.create(:service, :type => nil) }
+    let(:service_with_parent) { FactoryBot.create(:service, :service => FactoryBot.create(:service)) }
+    context "with no parent" do
+      context "with type" do
+        it "true" do
+          expect(service_with_type.retireable?).to be(true)
+        end
+      end
+
+      context "without type" do
+        it "checks type presence" do
+          expect(service_without_type.retireable?).to be(false)
+        end
+      end
+    end
+
+    context "with parent" do
+      it "true" do
+        expect(service_with_parent.retireable?).to be(true)
+      end
     end
   end
 

@@ -167,6 +167,10 @@ class ServiceTemplate < ApplicationRecord
     archive!
   end
 
+  def retireable?
+    false
+  end
+
   def request_class
     ServiceTemplateProvisionRequest
   end
@@ -195,7 +199,7 @@ class ServiceTemplate < ApplicationRecord
 
     nh['initiator'] = service_task.options[:initiator] if service_task.options[:initiator]
 
-    Service.create(nh) do |svc|
+    service = Service.create!(nh) do |svc|
       svc.service_template = self
       set_ownership(svc, service_task.get_user)
 
@@ -204,7 +208,9 @@ class ServiceTemplate < ApplicationRecord
         %w(id created_at updated_at service_template_id).each { |key| nh.delete(key) }
         svc.add_resource(sr.resource, nh) unless sr.resource.nil?
       end
+    end
 
+    service.tap do |svc|
       if parent_svc
         service_resource = ServiceResource.find_by(:id => service_task.options[:service_resource_id])
         parent_svc.add_resource!(svc, service_resource)
@@ -372,7 +378,7 @@ class ServiceTemplate < ApplicationRecord
   end
 
   def self.create_from_options(options)
-    create(options.except(:config_info).merge(:options => { :config_info => options[:config_info] }))
+    create!(options.except(:config_info).merge(:options => { :config_info => options[:config_info] }))
   end
   private_class_method :create_from_options
 
@@ -381,6 +387,16 @@ class ServiceTemplate < ApplicationRecord
     result = order(user, options, request_options)
     raise result[:errors].join(", ") if result[:errors].any?
     result[:request]
+  end
+
+  def picture=(value)
+    if value
+      if value.kind_of?(Hash)
+        super(create_picture(value))
+      else
+        super
+      end
+    end
   end
 
   def queue_order(user_id, options, request_options)

@@ -69,6 +69,9 @@ class Service < ApplicationRecord
   include CiFeatureMixin
   include Metric::CiMixin
 
+  extend InterRegionApiMethodRelay
+
+  include_concern 'Operations'
   include_concern 'RetirementManagement'
   include_concern 'Aggregation'
   include_concern 'ResourceLinking'
@@ -149,6 +152,10 @@ class Service < ApplicationRecord
     'service_reconfigure'
   end
 
+  def retireable?
+    parent.present? ? true : type.present?
+  end
+
   alias root_service root
   alias services children
   alias direct_service_children children
@@ -213,10 +220,6 @@ class Service < ApplicationRecord
 
   def composite?
     children.present?
-  end
-
-  def retireable?
-    type.present?
   end
 
   def atomic?
@@ -413,22 +416,32 @@ class Service < ApplicationRecord
   end
 
   def queue_chargeback_report_generation(options = {})
+    msg = "Generating chargeback report for `#{self.class.name}` with id #{id}"
     task = MiqTask.create(
-      :name    => "Generating chargeback report with id: #{id}",
+      :name    => msg,
       :state   => MiqTask::STATE_QUEUED,
       :status  => MiqTask::STATUS_OK,
-      :message => "Queueing Chargeback of #{self.class.name} with id: #{id}"
+      :message => "Queueing: #{msg}"
     )
+
+    cb = {
+      :class_name  => task.class.to_s,
+      :instance_id => task.id,
+      :method_name => :queue_callback,
+      :args        => ["Finished"]
+    }
 
     MiqQueue.submit_job(
       :service     => "reporting",
       :class_name  => self.class.name,
       :instance_id => id,
       :task_id     => task.id,
+      :miq_task_id  => task.id,
+      :miq_callback => cb,
       :method_name => "generate_chargeback_report",
       :args        => options
     )
-    _log.info("Added to queue: generate_chargeback_report for service #{name}")
+    _log.info("Added to queue: #{msg}")
     task
   end
 

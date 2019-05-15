@@ -96,6 +96,7 @@
     - BinaryBlobPart
     - CustomizationSpec
     - EventLog
+    - EventStream
     - FirewallRule
     - Host
     - Job
@@ -980,6 +981,7 @@
   :maindb: ExtManagementSystem
   :container_deployment_wizard: false
   :run_automate_methods_on_service_api_submit: false
+  :allow_api_service_ordering: true
 :prototype:
   :queue_type: miq_queue
   :artemis:
@@ -1101,7 +1103,13 @@
     :purge_window_size: 1000
 :transformation:
   :limits:
+    :max_concurrent_tasks_per_ems: 10
     :max_concurrent_tasks_per_host: 10
+    :cpu_limit_per_host: unlimited
+    :network_limit_per_host: unlimited
+    :conversion_polling_interval: 15 # in seconds
+    :poll_conversion_max: 86400 # i.e. default 24 hours (15s per-interval)
+    :poll_post_stage_max: 25200 # i.e. default 7 hours (15s per-interval)
 :ui:
   :mark_translated_strings: false
   :url:
@@ -1140,6 +1148,7 @@
       :starting_timeout: 20.minutes
       :poll: 10.seconds
       :memory_threshold: 0.megabytes
+      :sync_provider_with_server_interval: 1.minute
     :agent_coordinator_worker:
       :heartbeat_timeout: 30.minutes
       :poll: 30.seconds

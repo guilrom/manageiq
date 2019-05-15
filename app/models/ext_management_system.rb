@@ -84,6 +84,9 @@ class ExtManagementSystem < ApplicationRecord
   has_many :service_offerings, :foreign_key => :ems_id, :dependent => :destroy, :inverse_of => :ext_management_system
   has_many :service_parameters_sets, :foreign_key => :ems_id, :dependent => :destroy, :inverse_of => :ext_management_system
 
+  has_many :host_conversion_hosts, :through => :hosts, :source => :conversion_host
+  has_many :vm_conversion_hosts, :through => :vms, :source => :conversion_host
+
   validates :name,     :presence => true, :uniqueness => {:scope => [:tenant_id]}
   validates :hostname, :presence => true, :if => :hostname_required?
   validate :hostname_uniqueness_valid?, :hostname_format_valid?, :if => :hostname_required?
@@ -611,6 +614,10 @@ class ExtManagementSystem < ApplicationRecord
     $log.warn("User event logging is not available on [#{self.class.name}] Name:[#{name}]")
   end
 
+  def conversion_hosts
+    host_conversion_hosts + vm_conversion_hosts
+  end
+
   #
   # Metric methods
   #
@@ -772,4 +779,6 @@ class ExtManagementSystem < ApplicationRecord
     @storages = nil
     super
   end
+
+  define_method(:allow_duplicate_endpoint_url?) { false }
 end

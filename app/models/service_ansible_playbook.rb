@@ -59,6 +59,10 @@ class ServiceAnsiblePlaybook < ServiceGeneric
     postprocess(action)
   end
 
+  def retain_resources_on_retirement?
+    options.fetch_path(:config_info, :retirement, :remove_resources).to_s.start_with?("no_")
+  end
+
   private
 
   def manageiq_extra_vars(action)
@@ -108,7 +112,7 @@ class ServiceAnsiblePlaybook < ServiceGeneric
     %i(credential vault_credential).each do |cred|
       cred_sym = "#{cred}_id".to_sym
       credential_id = job_options.delete(cred_sym)
-      job_options[cred] = Authentication.find(credential_id).manager_ref if credential_id.present?
+      job_options[cred] = Authentication.find(credential_id).native_ref if credential_id.present?
     end
 
     hosts = job_options[:hosts]

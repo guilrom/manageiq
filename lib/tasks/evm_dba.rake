@@ -29,10 +29,12 @@ module EvmDba
           opt :username,           "Username",                     :type => :string
           opt :password,           "Password",                     :type => :string
           opt :hostname,           "Hostname",                     :type => :string
+          opt :port,               "Port",                         :type => :string
           opt :dbname,             "Database name",                :type => :string
         when :local_file
           opt :local_file,         "Destination file",             :type => :string, :required => true
         when :remote_file
+          opt :skip_directory,     "Don't add backup directory",   :type => :boolean, :default => false
           opt :remote_file_name,   "Destination depot filename",   :type => :string
         when :splitable
           opt :byte_count,         "Size to split files into",     :type => :string
@@ -50,14 +52,14 @@ module EvmDba
     end.delete_nils
   end
 
-  DB_OPT_KEYS = [:dbname, :username, :password, :hostname, :exclude_table_data, :byte_count].freeze
+  DB_OPT_KEYS = [:dbname, :username, :password, :hostname, :port, :exclude_table_data, :byte_count].freeze
   def self.collect_db_opts(opts)
     db_opts = {}
     DB_OPT_KEYS.each { |k| db_opts[k] = opts[k] if opts[k] }
     db_opts
   end
 
-  CONNECT_OPT_KEYS = [:uri, :uri_username, :uri_password, :aws_region, :remote_file_name].freeze
+  CONNECT_OPT_KEYS = %i(uri uri_username uri_password aws_region remote_file_name skip_directory).freeze
   def self.collect_connect_opts(opts)
     connect_opts = {}
     CONNECT_OPT_KEYS.each { |k| connect_opts[k] = opts[k] if opts[k] }

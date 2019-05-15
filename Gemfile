@@ -39,11 +39,11 @@ gem "gettext_i18n_rails_js",          "~>1.3.0"
 gem "hamlit",                         "~>2.8.5"
 gem "highline",                       "~>1.6.21",      :require => false
 gem "inifile",                        "~>3.0",         :require => false
-gem "inventory_refresh",              "~>0.1.1",       :require => false
-gem "kubeclient",                     "~>2.4",         :require => false # For scaling pods at runtime
+gem "inventory_refresh",              "~>0.1.2",       :require => false
+gem "kubeclient",                     "~>4.0",         :require => false # For scaling pods at runtime
 gem "linux_admin",                    "~>1.2.1",       :require => false
 gem "log_decorator",                  "~>0.1",         :require => false
-gem "manageiq-api-client",            "~>0.3.1",       :require => false
+gem "manageiq-api-client",            "~>0.3.3",       :require => false
 gem "manageiq-messaging",                              :require => false, :git => "https://github.com/ManageIQ/manageiq-messaging", :branch => "master"
 gem "manageiq-postgres_ha_admin",     "~>3.0",         :require => false
 gem "memoist",                        "~>0.15.0",      :require => false
@@ -56,7 +56,7 @@ gem "openscap",                       "~>0.4.8",       :require => false
 gem "pg",                             "~>0.18.2",      :require => false
 gem "pg-dsn_parser",                  "~>0.1.0",       :require => false
 gem "query_relation",                 "~>0.1.0",       :require => false
-gem "rails",                          "~>5.0.6"
+gem "rails",                          "~>5.0.7.2"
 gem "rails-i18n",                     "~>5.x"
 gem "rake",                           ">=11.0",        :require => false
 gem "rest-client",                    "~>2.0.0",       :require => false
@@ -66,7 +66,7 @@ gem "rubyzip",                        "~>1.2.1",       :require => false
 gem "rugged",                         "~>0.27.0",      :require => false
 gem "simple-rss",                     "~>1.3.1",       :require => false
 gem "snmp",                           "~>1.2.0",       :require => false
-gem "sqlite3",                                         :require => false
+gem "sqlite3",                        "~>1.3.0",       :require => false
 gem "trollop",                        "~>2.1.3",       :require => false
 
 # Modified gems (forked on Github)
@@ -144,7 +144,7 @@ end
 
 group :vmware, :manageiq_default do
   manageiq_plugin "manageiq-providers-vmware"
-  gem "vmware_web_service",             "~>0.3.0"
+  gem "vmware_web_service",             "~>0.3.3"
 end
 
 ### shared dependencies
@@ -184,7 +184,7 @@ group :seed, :manageiq_default do
 end
 
 group :smartstate, :manageiq_default do
-  gem "manageiq-smartstate",            "~>0.2.10",       :require => false
+  gem "manageiq-smartstate",            "~>0.2.18",       :require => false
 end
 
 group :consumption, :manageiq_default do

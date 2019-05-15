@@ -1,19 +1,56 @@
 describe "Service Retirement Management" do
-  let(:user) { FactoryGirl.create(:user_miq_request_approver, :userid => "admin") }
+  let!(:user) { FactoryGirl.create(:user_miq_request_approver, :userid => 'admin') }
+  let(:service_without_owner) { FactoryGirl.create(:service) }
+  let(:service3) { FactoryGirl.create(:service) }
   before do
     @server = EvmSpecHelper.local_miq_server
-    @service = FactoryGirl.create(:service)
+    @service = FactoryGirl.create(:service, :evm_owner_id => user.id)
   end
 
   # shouldn't be running make_retire_request because it's the bimodal not from ui part
-  it "#retirement_check" do
-    User.with_user(user) do
-      expect(MiqEvent).to receive(:raise_evm_event)
-      @service.update_attributes(:retires_on => 90.days.ago, :retirement_warn => 60, :retirement_last_warn => nil)
-      expect(@service.retirement_last_warn).to be_nil
-      @service.retirement_check
-      @service.reload
-      expect(@service.retirement_last_warn).not_to be_nil
+  describe "#retirement_check" do
+    context "with user" do
+      it "uses user info" do
+        User.with_user(user) do
+          expect(MiqEvent).to receive(:raise_evm_event)
+          @service.update_attributes(:retires_on => 90.days.ago, :retirement_warn => 60, :retirement_last_warn => nil)
+          expect(@service.retirement_last_warn).to be_nil
+          @service.retirement_check
+          @service.reload
+          expect(@service.retirement_last_warn).not_to be_nil
+          expect(@service.retirement_requester).to eq(user.userid)
+        end
+      end
+    end
+
+    context "with deleted user" do
+      let(:user_for_deletion) { FactoryGirl.create(:user_miq_request_approver) }
+      let(:service_with_non_admin_user) { FactoryGirl.create(:service) }
+      it "uses admin default" do
+        User.with_user(user_for_deletion) do
+          user_for_deletion.destroy
+          expect(MiqEvent).to receive(:raise_evm_event)
+          service_with_non_admin_user.update_attributes(:retires_on => 90.days.ago, :retirement_warn => 60, :retirement_last_warn => nil)
+          expect(service_with_non_admin_user.retirement_last_warn).to be_nil
+          service_with_non_admin_user.retirement_check
+          service_with_non_admin_user.reload
+          expect(service_with_non_admin_user.retirement_last_warn).not_to be_nil
+          expect(service_with_non_admin_user.retirement_requester).to eq("admin")
+        end
+      end
+    end
+
+    context "without user" do
+      it "uses admin default" do
+        expect(MiqEvent).to receive(:raise_evm_event)
+        service_without_owner.update_attributes(:retires_on => 90.days.ago, :retirement_warn => 60, :retirement_last_warn => nil)
+        expect(service_without_owner.retirement_last_warn).to be_nil
+        service_without_owner.retirement_check
+        service_without_owner.reload
+        expect(service_without_owner.retirement_last_warn).not_to be_nil
+        expect(service_without_owner.retirement_requester).to eq(user.userid)
+        expect(MiqRequest.first.userid).to eq("admin")
+      end
     end
   end
 
@@ -53,19 +90,18 @@ describe "Service Retirement Management" do
   it "#retire_now with userid" do
     expect(@service.retirement_state).to be_nil
     event_name = 'request_service_retire'
-    event_hash = {:service => @service, :type => "Service",
-                  :retirement_initiator => "user", :userid => "freddy"}
+    event_hash = {:userid => user.userid, :service => @service, :type => "Service"}
+    options = {:user_id => user.id, :group_id => MiqGroup.last.id, :tenant_id => Tenant.first.id}
 
-    expect(MiqEvent).to receive(:raise_evm_event).with(@service, event_name, event_hash, {}).once
+    expect(MiqEvent).to receive(:raise_evm_event).with(@service, event_name, event_hash, options).once
 
-    @service.retire_now('freddy')
+    @service.retire_now(user.userid)
   end
 
   it "#retire_now without userid" do
     expect(@service.retirement_state).to be_nil
     event_name = 'request_service_retire'
-    event_hash = {:service => @service, :type => "Service",
-                  :retirement_initiator => "system"}
+    event_hash = {:userid => nil, :service => @service, :type => "Service"}
 
     expect(MiqEvent).to receive(:raise_evm_event).with(@service, event_name, event_hash, {}).once
 
@@ -82,15 +118,13 @@ describe "Service Retirement Management" do
   end
 
   it "with one src_id" do
-    User.current_user = user
-    expect(ServiceRetireRequest).to receive(:make_request).with(nil, {:src_ids => ['yabadabadoo'], :__request_type__ => "service_retire"}, User.current_user, true)
-    @service.class.to_s.demodulize.constantize.make_retire_request('yabadabadoo')
+    expect(ServiceRetireRequest).to receive(:make_request).with(nil, {:src_ids => [service3.id], :__request_type__ => "service_retire"}, user)
+    @service.class.to_s.demodulize.constantize.make_retire_request(service3.id, user)
   end
 
   it "with many src_ids" do
-    User.current_user = user
-    expect(ServiceRetireRequest).to receive(:make_request).with(nil, {:src_ids => [1, 2, 3], :__request_type__ => "service_retire"}, User.current_user, true)
-    @service.class.to_s.demodulize.constantize.make_retire_request(1, 2, 3)
+    expect(ServiceRetireRequest).to receive(:make_request).with(nil, {:src_ids => [@service.id, service3.id, service_without_owner.id], :__request_type__ => "service_retire"}, user)
+    @service.class.to_s.demodulize.constantize.make_retire_request(@service.id, service3.id, service_without_owner.id, user)
   end
 
   it "#retire date" do
@@ -132,8 +166,17 @@ describe "Service Retirement Management" do
   end
 
   it "#finish_retirement" do
+    message = "Service: [#{service3.name}], Retires On: [#{Time.zone.now.strftime("%x %R %Z")}], has been retired"
+    expect(service3).to receive(:raise_audit_event).with("service_retired", message, nil)
+
+    service3.finish_retirement
+
+    expect(service3.retirement_state).to eq("retired")
+  end
+
+  it "#mark_retired" do
     expect(@service.retirement_state).to be_nil
-    @service.finish_retirement
+    @service.mark_retired
     @service.reload
     expect(@service.retired).to be_truthy
     expect(@service.retires_on).to be_between(Time.zone.now - 1.hour, Time.zone.now + 1.second)
@@ -187,7 +230,7 @@ describe "Service Retirement Management" do
 
   it "#raise_retirement_event" do
     event_name = 'foo'
-    event_hash = {:service => @service, :type => "Service", :retirement_initiator => "system"}
+    event_hash = {:userid => nil, :service => @service, :type => "Service"}
     expect(MiqEvent).to receive(:raise_evm_event).with(@service, event_name, event_hash, {})
     @service.raise_retirement_event(event_name)
   end
