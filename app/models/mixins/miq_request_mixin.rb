@@ -31,8 +31,12 @@ module MiqRequestMixin
   end
 
   def get_user
-    @user ||= User.in_my_region.find_by(:userid => userid).tap do |u|
-      u.current_group_by_description = options[:requester_group] if options[:requester_group]
+    if @user || User.in_my_region.find_by(:userid => userid)
+      @user ||= User.in_my_region.find_by(:userid => userid).tap do |u|
+        u.current_group_by_description = options[:requester_group] if options[:requester_group]
+      end
+    else
+      @user = User.super_admin
     end
   end
   alias_method :tenant_identity, :get_user
@@ -141,8 +145,7 @@ module MiqRequestMixin
       tag_descript = Classification.find_by_name(tag_path).description
       ws_tag_data << {:category => parts.first, :category_display_name => cat_descript,
                       :tag_name => parts.last,  :tag_display_name => tag_descript,
-                      :tag_path =>  File.join(ns, tag_path), :display_name => "#{cat_descript}: #{tag_descript}"
-                     }
+                      :tag_path =>  File.join(ns, tag_path), :display_name => "#{cat_descript}: #{tag_descript}"}
     end
     ws_tag_data
   end
@@ -168,6 +171,18 @@ module MiqRequestMixin
     values = options[:dialog]
     dialog = ResourceActionWorkflow.new(values, get_user, ra, {}).dialog
     DialogSerializer.new.serialize(Array[dialog]).first
+  end
+
+  def dialog_zone
+    zone = options.fetch_path(:dialog, "dialog_zone")
+    return nil if zone.blank?
+
+    unless Zone.where(:name => zone).exists?
+      _log.warn("unknown zone #{zone} specified in dialog, ignored.")
+      return nil
+    end
+
+    zone
   end
 
   def mark_execution_servers

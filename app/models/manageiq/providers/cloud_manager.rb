@@ -27,7 +27,7 @@ module ManageIQ::Providers
     has_many :cloud_object_store_objects,    :foreign_key => :ems_id, :dependent => :destroy
     has_many :cloud_services,                :foreign_key => :ems_id, :dependent => :destroy
     has_many :cloud_databases,               :foreign_key => :ems_id, :dependent => :destroy
-    has_many :key_pairs,                     :class_name  => "AuthPrivateKey", :as => :resource, :dependent => :destroy
+    has_many :key_pairs,                     :class_name  => "AuthKeyPair", :as => :resource, :dependent => :destroy
     has_many :host_aggregates,               :foreign_key => :ems_id, :dependent => :destroy
     has_one  :source_tenant, :as => :source, :class_name  => 'Tenant'
     has_many :vm_and_template_labels,        :through     => :vms_and_templates, :source => :labels
@@ -39,6 +39,8 @@ module ManageIQ::Providers
 
     include HasNetworkManagerMixin
     include HasManyOrchestrationStackMixin
+
+    after_destroy :destroy_mapped_tenants
 
     # Development helper method for Rails console for opening a browser to the EMS.
     #
@@ -140,5 +142,15 @@ module ManageIQ::Providers
     def self.display_name(number = 1)
       n_('Cloud Manager', 'Cloud Managers', number)
     end
+
+    def destroy_mapped_tenants
+      if source_tenant
+        source_tenant.all_subtenants.destroy_all
+        source_tenant.all_subprojects.destroy_all
+        source_tenant.destroy
+      end
+    end
+
+    define_method(:allow_duplicate_endpoint_url?) { true }
   end
 end

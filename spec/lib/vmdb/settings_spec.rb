@@ -35,40 +35,65 @@ describe Vmdb::Settings do
     end
   end
 
-  it ".walk" do
-    stub_settings(:a => {:b => 'c'}, :d => {:e => {:f => 'g'}}, :i => [{:j => 'k'}, {:l => 'm'}])
+  describe ".walk" do
+    it "traverses tree properly" do
+      stub_settings(:a => {:b => 'c'}, :d => {:e => {:f => 'g'}}, :i => [{:j => 'k'}, {:l => 'm'}])
 
-    walked = []
-    described_class.walk do |key, value, path, owning|
-      expect(owning).to be_kind_of(Config::Options)
+      walked = []
+      described_class.walk do |key, value, path, owning|
+        expect(owning).to be_kind_of(Config::Options)
 
-      if %i(a d e).include?(key)
-        expect(value).to be_kind_of(Config::Options)
-        value = value.to_hash
-      elsif %i(i).include?(key)
-        expect(value).to be_kind_of(Array)
-        value.each { |v| expect(v).to be_kind_of(Config::Options) }
-        value = value.collect(&:to_hash)
+        if %i(a d e).include?(key)
+          expect(value).to be_kind_of(Config::Options)
+          value = value.to_hash
+        elsif %i(i).include?(key)
+          expect(value).to be_kind_of(Array)
+          value.each { |v| expect(v).to be_kind_of(Config::Options) }
+          value = value.collect(&:to_hash)
+        end
+
+        walked << [key, value, path]
       end
 
-      walked << [key, value, path]
+      expect(walked).to eq [
+        #key value                       path
+        [:a, {:b => 'c'},                [:a]],
+        [:b, 'c',                        [:a, :b]],
+        [:d, {:e => {:f => 'g'}},        [:d]],
+        [:e, {:f => 'g'},                [:d, :e]],
+        [:f, 'g',                        [:d, :e, :f]],
+        [:i, [{:j => 'k'}, {:l => 'm'}], [:i]],
+        [:j, 'k',                        [:i, 0, :j]],
+        [:l, 'm',                        [:i, 1, :l]],
+      ]
     end
 
-    expect(walked).to eq [
-      #key value                       path
-      [:a, {:b => 'c'},                [:a]],
-      [:b, 'c',                        [:a, :b]],
-      [:d, {:e => {:f => 'g'}},        [:d]],
-      [:e, {:f => 'g'},                [:d, :e]],
-      [:f, 'g',                        [:d, :e, :f]],
-      [:i, [{:j => 'k'}, {:l => 'm'}], [:i]],
-      [:j, 'k',                        [:i, 0, :j]],
-      [:l, 'm',                        [:i, 1, :l]],
-    ]
+    it "handles basic recursion (value == settings)" do
+      y = YAML.load(<<~CONFIG)
+        ---
+        :hash:
+        - &1
+          A: *1
+        CONFIG
+
+      expect { described_class.walk(y) { |_k, _v, _p, _o| } }.not_to raise_error
+    end
+
+    it "handles hash recursion (embedded array == settings)" do
+      s = {:a => []}
+      s[:a] << s
+      expect { described_class.walk(s) { |_k, _v, _p, _o| } }.not_to raise_error
+    end
+
+    it "handles array recursion (key == settings)" do
+      s = []
+      s << s
+      expect { described_class.walk(s) { |_k, _v, _p, _o| } }.not_to raise_error
+    end
   end
 
   describe ".save!" do
-    let(:miq_server) { FactoryGirl.create(:miq_server) }
+    let(:miq_server) { FactoryBot.create(:miq_server) }
 
     it "does not allow invalid configuration values" do
       expect do
@@ -215,7 +240,7 @@ describe Vmdb::Settings do
 
     it "encrypts password fields" do
       password  = "pa$$word"
-      encrypted = MiqPassword.encrypt(password)
+      encrypted = ManageIQ::Password.encrypt(password)
 
       described_class.save!(miq_server,
         :authentication => {
@@ -362,7 +387,7 @@ describe Vmdb::Settings do
   end
 
   describe "save_yaml!" do
-    let(:miq_server) { FactoryGirl.create(:miq_server) }
+    let(:miq_server) { FactoryBot.create(:miq_server) }
 
     it "saves the settings" do
       data = {:api => {:token_ttl => "1.day"}}.to_yaml
@@ -377,7 +402,7 @@ describe Vmdb::Settings do
 
     it "handles incoming unencrypted values" do
       password  = "pa$$word"
-      encrypted = MiqPassword.encrypt(password)
+      encrypted = ManageIQ::Password.encrypt(password)
 
       data = {:authentication => {:bind_pwd => password}}.to_yaml
       described_class.save_yaml!(miq_server, data)
@@ -391,7 +416,7 @@ describe Vmdb::Settings do
 
     it "handles incoming encrypted values" do
       password  = "pa$$word"
-      encrypted = MiqPassword.encrypt(password)
+      encrypted = ManageIQ::Password.encrypt(password)
 
       data = {:authentication => {:bind_pwd => encrypted}}.to_yaml
       described_class.save_yaml!(miq_server, data)
@@ -470,14 +495,14 @@ describe Vmdb::Settings do
   describe ".encrypt_passwords!" do
     let(:method)   { :encrypt_passwords! }
     let(:initial)  { "pa$$word" }
-    let(:expected) { MiqPassword.encrypt(initial) }
+    let(:expected) { ManageIQ::Password.encrypt(initial) }
 
     include_examples "password handling"
   end
 
   describe ".decrypt_passwords!" do
     let(:method)   { :decrypt_passwords! }
-    let(:initial)  { MiqPassword.encrypt(expected) }
+    let(:initial)  { ManageIQ::Password.encrypt(expected) }
     let(:expected) { "pa$$word" }
 
     include_examples "password handling"
@@ -492,7 +517,7 @@ describe Vmdb::Settings do
   end
 
   describe ".for_resource" do
-    let(:server) { FactoryGirl.create(:miq_server) }
+    let(:server) { FactoryBot.create(:miq_server) }
 
     it "without database changes" do
       settings = Vmdb::Settings.for_resource(server)
@@ -549,7 +574,7 @@ describe Vmdb::Settings do
 
   describe ".for_resource_yaml" do
     it "fetches the yaml with changes" do
-      miq_server = FactoryGirl.create(:miq_server)
+      miq_server = FactoryBot.create(:miq_server)
       described_class.save!(miq_server, :api => {:token_ttl => "1.day"})
 
       yaml = described_class.for_resource_yaml(miq_server)
@@ -562,9 +587,9 @@ describe Vmdb::Settings do
 
     it "ensures passwords are encrypted" do
       password  = "pa$$word"
-      encrypted = MiqPassword.encrypt(password)
+      encrypted = ManageIQ::Password.encrypt(password)
 
-      miq_server = FactoryGirl.create(:miq_server)
+      miq_server = FactoryBot.create(:miq_server)
       described_class.save!(miq_server, :authentication => {:bind_pwd => password})
 
       yaml = described_class.for_resource_yaml(miq_server)

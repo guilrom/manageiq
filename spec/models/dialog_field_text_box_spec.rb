@@ -44,9 +44,23 @@ describe DialogFieldTextBox do
       context "when show_refresh_button is false" do
         let(:show_refresh_button) { false }
 
-        it "sets the value to the automate value" do
-          field.initialize_value_context
-          expect(field.instance_variable_get(:@value)).to eq("value from automate")
+
+        context "when load_values_on_init is true" do
+          let(:load_values_on_init) { true }
+
+          it "sets the value to the automate value" do
+            field.initialize_value_context
+            expect(field.instance_variable_get(:@value)).to eq("value from automate")
+          end
+        end
+
+        context "when load_values_on_init is false" do
+          let(:load_values_on_init) { false }
+
+          it "uses the default value" do
+            field.initialize_value_context
+            expect(field.instance_variable_get(:@value)).to eq("default value")
+          end
         end
       end
     end
@@ -70,7 +84,7 @@ describe DialogFieldTextBox do
   end
 
   context "dialog field text box without options hash" do
-    let(:df) { FactoryGirl.build(:dialog_field_text_box, :label => 'test field', :name => 'test field') }
+    let(:df) { FactoryBot.build(:dialog_field_text_box, :label => 'test field', :name => 'test field') }
 
     it "#protected?" do
       expect(df).not_to be_protected
@@ -83,7 +97,7 @@ describe DialogFieldTextBox do
   end
 
   context "dialog field text box without protected field" do
-    let(:df) { FactoryGirl.build(:dialog_field_text_box, :label => 'test field', :name => 'test field', :options => {:protected => false}) }
+    let(:df) { FactoryBot.build(:dialog_field_text_box, :label => 'test field', :name => 'test field', :options => {:protected => false}) }
 
     it "#protected?" do
       expect(df).not_to be_protected
@@ -95,7 +109,7 @@ describe DialogFieldTextBox do
   end
 
   context "dialog field text box with protected field" do
-    let(:df) { FactoryGirl.build(:dialog_field_text_box, :label   => 'test field', :name    => 'test field', :options => {:protected => true}) }
+    let(:df) { FactoryBot.build(:dialog_field_text_box, :label   => 'test field', :name    => 'test field', :options => {:protected => true}) }
 
     it "#protected?" do
       expect(df).to be_protected
@@ -121,7 +135,7 @@ describe DialogFieldTextBox do
   end
 
   context "validation" do
-    let(:df) { FactoryGirl.build(:dialog_field_text_box, :label => 'test field', :name => 'test field') }
+    let(:df) { FactoryBot.build(:dialog_field_text_box, :label => 'test field', :name => 'test field') }
 
     describe "#validate_field_data" do
       let(:dt) { double('DialogTab', :label => 'tab') }
@@ -406,7 +420,7 @@ describe DialogFieldTextBox do
         let(:protected_attr) { true }
 
         before do
-          allow(MiqPassword).to receive(:encrypt).with("12test").and_return("lol")
+          allow(ManageIQ::Password).to receive(:encrypt).with("12test").and_return("lol")
         end
 
         it "returns the encrypted value" do
@@ -430,7 +444,7 @@ describe DialogFieldTextBox do
         let(:protected_attr) { true }
 
         before do
-          allow(MiqPassword).to receive(:encrypt).with("12test").and_return("lol")
+          allow(ManageIQ::Password).to receive(:encrypt).with("12test").and_return("lol")
         end
 
         it "returns the encrypted value" do

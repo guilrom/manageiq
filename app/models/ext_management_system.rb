@@ -32,11 +32,18 @@ class ExtManagementSystem < ApplicationRecord
     %w[]
   end
 
+  def self.supported_types_for_create
+    leaf_subclasses.select(&:supported_for_create?)
+  end
+
+  def self.supported_for_create?
+    !reflections.include?("parent_manager")
+  end
+
   belongs_to :provider
   has_many :child_managers, :class_name => 'ExtManagementSystem', :foreign_key => 'parent_ems_id'
 
   belongs_to :tenant
-  has_many :container_deployments, :foreign_key => :deployed_on_ems_id, :inverse_of => :deployed_on_ems
   has_many :endpoints, :as => :resource, :dependent => :destroy, :autosave => true
 
   has_many :hosts, :foreign_key => "ems_id", :dependent => :nullify, :inverse_of => :ext_management_system
@@ -72,6 +79,7 @@ class ExtManagementSystem < ApplicationRecord
   has_one  :iso_datastore, :foreign_key => "ems_id", :dependent => :destroy, :inverse_of => :ext_management_system
 
   belongs_to :zone
+  belongs_to :zone_before_pause, :class_name => "Zone", :inverse_of => :paused_ext_management_systems # used for maintenance mode
 
   has_many :metrics,        :as => :resource  # Destroy will be handled by purger
   has_many :metric_rollups, :as => :resource  # Destroy will be handled by purger
@@ -84,9 +92,14 @@ class ExtManagementSystem < ApplicationRecord
   has_many :service_offerings, :foreign_key => :ems_id, :dependent => :destroy, :inverse_of => :ext_management_system
   has_many :service_parameters_sets, :foreign_key => :ems_id, :dependent => :destroy, :inverse_of => :ext_management_system
 
+  has_many :host_conversion_hosts, :through => :hosts, :source => :conversion_host
+  has_many :vm_conversion_hosts, :through => :vms, :source => :conversion_host
+
   validates :name,     :presence => true, :uniqueness => {:scope => [:tenant_id]}
   validates :hostname, :presence => true, :if => :hostname_required?
   validate :hostname_uniqueness_valid?, :hostname_format_valid?, :if => :hostname_required?
+
+  validate :validate_ems_enabled_when_zone_changed?, :validate_zone_not_maintenance_when_ems_enabled?
 
   scope :with_eligible_manager_types, ->(eligible_types) { where(:type => eligible_types) }
 
@@ -107,6 +120,22 @@ class ExtManagementSystem < ApplicationRecord
   def hostname_format_valid?
     return if hostname.ipaddress? || hostname.hostname?
     errors.add(:hostname, _("format is invalid."))
+  end
+
+  # validation - Zone cannot be changed when enabled == false
+  def validate_ems_enabled_when_zone_changed?
+    return if enabled_changed?
+
+    if zone_id_changed? && !enabled?
+      errors.add(:zone, N_("cannot be changed because the provider is paused"))
+    end
+  end
+
+  # validation - Zone cannot be maintenance_zone when enabled == true
+  def validate_zone_not_maintenance_when_ems_enabled?
+    if enabled? && zone.present? && zone == Zone.maintenance_zone
+      errors.add(:zone, N_("cannot be the maintenance zone when provider is active"))
+    end
   end
 
   include NewWithTypeStiMixin
@@ -173,6 +202,8 @@ class ExtManagementSystem < ApplicationRecord
   virtual_column :total_vms_suspended,     :type => :integer
   virtual_total  :total_subnets,           :cloud_subnets
   virtual_column :supports_block_storage,  :type => :boolean
+  virtual_column :supports_volume_multiattachment, :type => :boolean
+  virtual_column :supports_volume_resizing, :type => :boolean
   virtual_column :supports_cloud_object_store_container_create, :type => :boolean
   virtual_column :supports_cinder_volume_types, :type => :boolean
 
@@ -185,6 +216,39 @@ class ExtManagementSystem < ApplicationRecord
   alias_attribute :to_s, :name
 
   default_value_for :enabled, true
+
+  after_save :change_maintenance_for_child_managers, :if => proc { |ems| ems.enabled_changed? }
+
+  # Move ems to maintenance zone and backup current one
+  # @param orig_zone [Integer] because of zone of child manager can be changed by parent manager's ensure_managers() callback
+  #                            we need to specify original zone for children explicitly
+  def pause!(orig_zone = nil)
+    _log.info("Pausing EMS [#{name}] id [#{id}].")
+    update!(
+      :zone_before_pause => orig_zone || zone,
+      :zone              => Zone.maintenance_zone,
+      :enabled           => false
+    )
+    _log.info("Pausing EMS [#{name}] id [#{id}] successful.")
+  end
+
+  # Move ems to original zone, reschedule task/jobs/.. collected during maintenance
+  def resume!
+    _log.info("Resuming EMS [#{name}] id [#{id}].")
+
+    new_zone = if zone_before_pause.nil?
+                 zone == Zone.maintenance_zone ? Zone.default_zone : zone
+               else
+                 zone_before_pause
+               end
+
+    update!(
+      :zone_before_pause => nil,
+      :zone              => new_zone,
+      :enabled           => true
+    )
+    _log.info("Resuming EMS [#{name}] id [#{id}] successful.")
+  end
 
   def self.with_ipaddress(ipaddress)
     joins(:endpoints).where(:endpoints => {:ipaddress => ipaddress})
@@ -281,6 +345,15 @@ class ExtManagementSystem < ApplicationRecord
 
   def self.provision_workflow_class
     self::ProvisionWorkflow
+  end
+
+  BELONGS_TO_DESCENDANTS_CLASSES_BY_NAME = {
+    'Network Manager' => 'ManageIQ::Providers::NetworkManager'
+  }.freeze
+
+  def self.belongsto_descendant_class(name)
+    return unless (descendant = BELONGS_TO_DESCENDANTS_CLASSES_BY_NAME.keys.detect { |x| name.end_with?(x) })
+    BELONGS_TO_DESCENDANTS_CLASSES_BY_NAME[descendant]
   end
 
   # UI methods for determining availability of fields
@@ -455,16 +528,6 @@ class ExtManagementSystem < ApplicationRecord
     @ems_physical_infra_discovery_types ||= %w(lenovo_ph_infra)
   end
 
-  def disable!
-    _log.info("Disabling EMS [#{name}] id [#{id}].")
-    update!(:enabled => false)
-  end
-
-  def enable!
-    _log.info("Enabling EMS [#{name}] id [#{id}].")
-    update!(:enabled => true)
-  end
-
   # override destroy_queue from AsyncDeleteMixin
   def self.destroy_queue(ids)
     find(Array.wrap(ids)).map(&:destroy_queue)
@@ -586,6 +649,14 @@ class ExtManagementSystem < ApplicationRecord
     supports_block_storage?
   end
 
+  def supports_volume_multiattachment
+    supports_volume_multiattachment?
+  end
+
+  def supports_volume_resizing
+    supports_volume_resizing?
+  end
+
   def supports_cloud_object_store_container_create
     supports_cloud_object_store_container_create?
   end
@@ -609,6 +680,10 @@ class ExtManagementSystem < ApplicationRecord
   def vm_log_user_event(_vm, user_event)
     $log.info(user_event)
     $log.warn("User event logging is not available on [#{self.class.name}] Name:[#{name}]")
+  end
+
+  def conversion_hosts
+    host_conversion_hosts + vm_conversion_hosts
   end
 
   #
@@ -745,6 +820,23 @@ class ExtManagementSystem < ApplicationRecord
 
   private
 
+  def disable!
+    _log.info("Disabling EMS [#{name}] id [#{id}].")
+    update!(:enabled => false)
+    _log.info("Disabling EMS [#{name}] id [#{id}] successful.")
+  end
+
+  # Child managers went to/from maintenance mode with parent
+  def change_maintenance_for_child_managers
+    child_managers.each do |child_manager|
+      if enabled?
+        child_manager.resume!
+      else
+        child_manager.pause!(zone_before_pause)
+      end
+    end
+  end
+
   def build_connection(options = {})
     build_endpoint_by_role(options[:endpoint])
     build_authentication_by_role(options[:authentication])
@@ -765,11 +857,13 @@ class ExtManagementSystem < ApplicationRecord
     role = options.delete(:role)
     creds = {}
     creds[role] = options
-    update_authentication(creds,options)
+    update_authentication(creds, options)
   end
 
   def clear_association_cache
     @storages = nil
     super
   end
+
+  define_method(:allow_duplicate_endpoint_url?) { false }
 end

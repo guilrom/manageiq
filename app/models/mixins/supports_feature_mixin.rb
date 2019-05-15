@@ -73,6 +73,7 @@ module SupportsFeatureMixin
     :backup_restore                      => 'CloudVolume backup restore',
     :cinder_service                      => 'Cinder storage service',
     :cinder_volume_types                 => 'Cinder volume types',
+    :conversion_host                     => 'Conversion host capable',
     :create_floating_ip                  => 'Floating IP Creation',
     :create_host_aggregate               => 'Host Aggregate Creation',
     :create_security_group               => 'Security Group Creation',
@@ -140,9 +141,12 @@ module SupportsFeatureMixin
     :update_floating_ip                  => 'Update Floating IP association',
     :ems_network_new                     => 'New EMS Network Provider',
     :update_security_group               => 'Security Group Update',
+    :upgrade_cluster                     => 'Cluster Upgrade',
     :block_storage                       => 'Block Storage',
     :object_storage                      => 'Object Storage',
     :vm_import                           => 'VM Import',
+    :volume_multiattachment              => 'Volume Multiattachment',
+    :volume_resizing                     => 'Volume Resizing',
     :change_password                     => 'Change Password'
   }.freeze
 

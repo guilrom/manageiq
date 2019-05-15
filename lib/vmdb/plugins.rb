@@ -16,10 +16,7 @@ module Vmdb
     end
 
     def all
-      @all ||=
-        Rails::Engine.subclasses.select do |engine|
-          engine.name.start_with?("ManageIQ::Providers::") || engine.try(:vmdb_plugin?)
-        end.sort_by(&:name)
+      @all ||= Rails::Engine.subclasses.select { |engine| engine.try(:vmdb_plugin?) }.sort_by(&:name)
     end
 
     def each(&block)
@@ -66,10 +63,6 @@ module Vmdb
       end
     end
 
-    def system_automate_domains
-      @system_automate_domains ||= automate_domains.select(&:system?)
-    end
-
     def provider_plugins
       @provider_plugins ||= select { |engine| engine.name.start_with?("ManageIQ::Providers::") }
     end
@@ -108,10 +101,12 @@ module Vmdb
     # - path based, with git, on a sha:    <sha>
     # - path based, without git:           nil
     # - a real gem:                        <gem_version>
+    #
+    # The paths above can be real paths or symlinked paths.
     def version(engine)
-      spec = bundler_specs_by_path[engine.root.to_s]
+      spec = bundler_specs_by_path[engine.root.realpath.to_s]
 
-      case spec.source
+      case spec&.source
       when Bundler::Source::Git
         [
           spec.source.branch || spec.source.options["tag"],
@@ -136,7 +131,11 @@ module Vmdb
     end
 
     def bundler_specs_by_path
-      @bundler_specs_by_path ||= Bundler.environment.specs.index_by(&:full_gem_path)
+      # NOTE: The rescue nil / delete nil dance is needed because of a bundler
+      # bug where on Ruby 2.5 the full_gem_path is a nonexistent directory for
+      # gems that are also default gems.
+      # See https://github.com/bundler/bundler/issues/6930.
+      @bundler_specs_by_path ||= Bundler.environment.specs.index_by { |s| File.realpath(s.full_gem_path) rescue nil }.tap { |s| s.delete(nil) }
     end
 
     def content_directories(engine, subfolder)

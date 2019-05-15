@@ -164,7 +164,7 @@ describe InterRegionApiMethodRelay do
 
     describe ".api_client_connection_for_region" do
       let!(:server)           { EvmSpecHelper.local_miq_server(:has_active_webservices => true) }
-      let!(:region)           { FactoryGirl.create(:miq_region, :region => region_number) }
+      let!(:region)           { FactoryBot.create(:miq_region, :region => region_number) }
       let(:region_number)     { ApplicationRecord.my_region_number }
       let(:request_user)      { "test_user" }
       let(:api_connection)    { double("ManageIQ::API::Client connection") }
@@ -226,6 +226,11 @@ describe InterRegionApiMethodRelay do
         expect {
           described_class.exec_api_call(region, collection_name, action)
         }.to raise_error(described_class::InterRegionApiMethodRelayError)
+      end
+
+      it "accepts Hash object as api result" do
+        expect(api_collection).to receive(action).and_return({})
+        expect { described_class.exec_api_call(region, collection_name, action) }.not_to raise_error
       end
 
       it "calls the given action with the given args" do

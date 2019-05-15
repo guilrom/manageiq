@@ -309,8 +309,11 @@ class MiqExpression
       preprocess_for_sql(exp[operator], attrs)
       exp.delete(operator) if exp[operator].empty? # Clean out empty operands
     else
-      # check operands to see if they can be represented in sql
-      unless sql_supports_atom?(exp)
+      if sql_supports_atom?(exp)
+        # if field type is Integer and value is String representing size in units (like "2.megabytes") than convert
+        # this string to correct number using sub_type mappong defined in db/fixtures/miq_report_formats.yml:sub_types_by_column:
+        convert_size_in_units_to_integer(exp) if %w[= != <= >= > <].include?(operator)
+      else
         attrs[:supported_by_sql] = false
         exp.delete(operator)
       end
@@ -374,18 +377,12 @@ class MiqExpression
   end
 
   def field_in_sql?(field)
-    # => false if operand is from a virtual reflection
-    return false if field_from_virtual_reflection?(field)
     return false unless attribute_supported_by_sql?(field)
 
     # => false if excluded by special case defined in preprocess options
     return false if field_excluded_by_preprocess_options?(field)
 
     true
-  end
-
-  def field_from_virtual_reflection?(field)
-    col_details[field][:virtual_reflection]
   end
 
   def attribute_supported_by_sql?(field)
@@ -447,7 +444,7 @@ class MiqExpression
   end
 
   def self.get_col_info(field, options = {})
-    result ||= {:data_type => nil, :virtual_reflection => false, :virtual_column => false, :sql_support => true, :excluded_by_preprocess_options => false, :tag => false, :include => {}}
+    result ||= {:data_type => nil, :sql_support => true, :excluded_by_preprocess_options => false, :tag => false, :include => {}}
 
     f = parse_field_or_tag(field)
     unless f.kind_of?(MiqExpression::Field)
@@ -457,33 +454,18 @@ class MiqExpression
       return result
     end
 
-    f.collect_reflections.map(&:name).inject(result[:include]) { |a, p| a[p] ||= {} }
-    result[:virtual_reflection] = !f.reflection_supported_by_sql?
+    result[:include] = f.includes
 
     if f.column
       result[:data_type] = f.column_type
       result[:format_sub_type] = f.sub_type
-      result[:virtual_column] = f.virtual_attribute?
       result[:sql_support] = f.attribute_supported_by_sql?
-      result[:excluded_by_preprocess_options] = exclude_col_by_preprocess_options?(f, options)
+      result[:excluded_by_preprocess_options] = f.exclude_col_by_preprocess_options?(options)
     end
     result
   rescue ArgumentError
-    # not thrilled with these values. but making tests pass for now
-    result[:virtual_reflection] = true
     result[:sql_support] = false
-    result[:virtual_column] = true
     result
-  end
-
-  def self.exclude_col_by_preprocess_options?(field, options)
-    if options.kind_of?(Hash) && options[:vim_performance_daily_adhoc]
-      Metric::Rollup.excluded_col_for_expression?(field.column.to_sym)
-    elsif field.target == Service
-      Service::AGGREGATE_ALL_VM_ATTRS.include?(field.column.to_sym)
-    else
-      false
-    end
   end
 
   def lenient_evaluate(obj, tz = nil)
@@ -638,9 +620,9 @@ class MiqExpression
         end
       end
     elsif ops["count"]
-      ref, count = value2tag(ops["count"])
-      field = "<count ref=#{ref}>#{count}</count>"
-      [field, quote(ops["value"], "integer")]
+      target = parse_field_or_tag(ops["count"])
+      fld = "<count ref=#{target.model.to_s.downcase}>#{target.tag_path_with}</count>"
+      [fld, quote(ops["value"], target.column_type)]
     elsif ops["regkey"]
       if operator == "key exists"
         "<registry key_exists=1, type=boolean>#{ops["regkey"].strip}</registry>  == 'true'"
@@ -930,8 +912,8 @@ class MiqExpression
       cb_model = Chargeback.report_cb_model(model)
       model.constantize.try(:refresh_dynamic_metric_columns)
       md = model_details(model, :include_model => false, :include_tags => true).select do |c|
-        allowed_suffixes = ReportController::Reports::Editor::CHARGEBACK_ALLOWED_FIELD_SUFFIXES
-        allowed_suffixes += ReportController::Reports::Editor::METERING_VM_ALLOWED_FIELD_SUFFIXES if model.starts_with?('Metering')
+        allowed_suffixes = Chargeback::ALLOWED_FIELD_SUFFIXES
+        allowed_suffixes += Metering::ALLOWED_FIELD_SUFFIXES if model.starts_with?('Metering')
         c.last.ends_with?(*allowed_suffixes)
       end
       td = if TAG_CLASSES.include?(cb_model)
@@ -1300,6 +1282,27 @@ class MiqExpression
 
   private
 
+  def convert_size_in_units_to_integer(exp)
+    return if (column_details = col_details[exp.values.first["field"]]).nil?
+    # attempt to do conversion only if db type of column is integer and value to compare to is String
+    return unless column_details[:data_type] == :integer && (value = exp.values.first["value"]).class == String
+
+    sub_type = column_details[:format_sub_type]
+
+    return if %i[mhz_avg hours kbps kbps_precision_2 mhz elapsed_time].include?(sub_type)
+
+    case sub_type
+    when :bytes
+      exp.values.first["value"] = value.to_i_with_method
+    when :kilobytes
+      exp.values.first["value"] = value.to_i_with_method / 1_024
+    when :megabytes, :megabytes_precision_2
+      exp.values.first["value"] = value.to_i_with_method / 1_048_576
+    else
+      _log.warn("No subtype defined for column #{exp.values.first["field"]} in 'miq_report_formats.yml'")
+    end
+  end
+
   # example:
   #   ruby_for_date_compare(:updated_at, :date, tz, "==", Time.now)
   #   # => "val=update_at; !val.nil? && val.to_date == '2016-10-05'"
@@ -1376,7 +1379,7 @@ class MiqExpression
         next if arel.blank?
         result << arel
       end
-      Arel::Nodes::And.new(operands)
+      Arel::Nodes::Grouping.new(Arel::Nodes::And.new(operands))
     when "or"
       operands = exp[operator].each_with_object([]) do |operand, result|
         next if operand.blank?

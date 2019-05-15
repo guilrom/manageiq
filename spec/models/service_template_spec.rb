@@ -1,30 +1,33 @@
 describe ServiceTemplate do
   include_examples "OwnershipMixin"
 
-  let(:service_user) { FactoryGirl.build(:user) }
+  let(:service_user) { FactoryBot.build(:user) }
 
   describe "#custom_actions" do
     it "returns the custom actions in a hash grouped by buttons and button groups" do
-      FactoryGirl.create(:custom_button, :name => "generic_no_group", :applies_to_class => "Service")
-      generic_group = FactoryGirl.create(:custom_button, :name => "generic_group", :applies_to_class => "Service")
-      generic_group_set = FactoryGirl.create(:custom_button_set, :name => "generic_group_set")
-      generic_group_set.add_member(generic_group)
+      FactoryBot.create(:custom_button, :name => "generic_no_group", :applies_to_class => "Service")
+      generic_group = FactoryBot.create(:custom_button, :name => "generic_group", :applies_to_class => "Service")
+      generic_group_set = FactoryBot.create(:custom_button_set, :name => "generic_group_set")
+      generic_group_set.set_data = {:button_order => [generic_group.id]}
+      generic_group_set.save!
 
-      service_template = FactoryGirl.create(:service_template)
-      FactoryGirl.create(
+      service_template = FactoryBot.create(:service_template)
+      FactoryBot.create(
         :custom_button,
         :name             => "assigned_no_group",
         :applies_to_class => "ServiceTemplate",
         :applies_to_id    => service_template.id
       )
-      assigned_group = FactoryGirl.create(
+      assigned_group = FactoryBot.create(
         :custom_button,
         :name             => "assigned_group",
         :applies_to_class => "ServiceTemplate",
         :applies_to_id    => service_template.id
       )
-      assigned_group_set = FactoryGirl.create(:custom_button_set, :name => "assigned_group_set")
-      assigned_group_set.add_member(assigned_group)
+      assigned_group_set = FactoryBot.create(:custom_button_set, :name => "assigned_group_set")
+      assigned_group_set.set_data = {:button_order => [assigned_group.id]}
+      assigned_group_set.save!
+
       service_template.update(:custom_button_sets => [assigned_group_set])
 
       expected = {
@@ -47,24 +50,24 @@ describe ServiceTemplate do
     end
 
     it "does not show hidden buttons" do
-      service_template = FactoryGirl.create(:service_template)
-      service = FactoryGirl.create(:service, :name => "foo", :service_template => service_template)
+      service_template = FactoryBot.create(:service_template)
+      service = FactoryBot.create(:service, :name => "foo", :service_template => service_template)
       true_expression = MiqExpression.new("=" => {"field" => "Service-name", "value" => "foo"})
       false_expression = MiqExpression.new("=" => {"field" => "Service-name", "value" => "labar"})
-      FactoryGirl.create(:custom_button,
+      FactoryBot.create(:custom_button,
                          :name                  => "visible button",
                          :applies_to_class      => "Service",
                          :visibility_expression => true_expression)
-      FactoryGirl.create(:custom_button,
+      FactoryBot.create(:custom_button,
                          :name                  => "hidden button",
                          :applies_to_class      => "Service",
                          :visibility_expression => false_expression)
-      FactoryGirl.create(:custom_button_set).tap do |group|
-        group.add_member(FactoryGirl.create(:custom_button,
+      FactoryBot.create(:custom_button_set).tap do |group|
+        group.add_member(FactoryBot.create(:custom_button,
                                             :name                  => "visible button in group",
                                             :applies_to_class      => "Service",
                                             :visibility_expression => true_expression))
-        group.add_member(FactoryGirl.create(:custom_button,
+        group.add_member(FactoryBot.create(:custom_button,
                                             :name                  => "hidden button in group",
                                             :applies_to_class      => "Service",
                                             :visibility_expression => false_expression))
@@ -86,8 +89,8 @@ describe ServiceTemplate do
     end
 
     context "expression evaluation" do
-      let(:service_template) { FactoryGirl.create(:service_template, :prov_type=> "vmware") }
-      let(:service) { FactoryGirl.create(:service, :name => "foo", :service_template => service_template) }
+      let(:service_template) { FactoryBot.create(:service_template, :prov_type=> "vmware") }
+      let(:service) { FactoryBot.create(:service, :name => "foo", :service_template => service_template) }
       let(:true_expression_on_template) do
         MiqExpression.new("=" => {"field" => "ServiceTemplate-prov_type", "value" => "vmware"})
       end
@@ -102,20 +105,20 @@ describe ServiceTemplate do
       end
 
       before do
-        FactoryGirl.create(:custom_button,
+        FactoryBot.create(:custom_button,
                            :name                  => "visible button on service",
                            :applies_to_class      => "Service",
                            :visibility_expression => true_expression_on_service)
-        FactoryGirl.create(:custom_button,
+        FactoryBot.create(:custom_button,
                            :name                  => "hidden button on service",
                            :applies_to_class      => "Service",
                            :visibility_expression => false_expression_on_service)
-        FactoryGirl.create(:custom_button,
+        FactoryBot.create(:custom_button,
                            :name                  => "visible button on template",
                            :applies_to_class      => "ServiceTemplate",
                            :applies_to_id         => service_template.id,
                            :visibility_expression => true_expression_on_template)
-        FactoryGirl.create(:custom_button,
+        FactoryBot.create(:custom_button,
                            :name                  => "hidden visible button on template",
                            :applies_to_class      => "ServiceTemplate",
                            :applies_to_id         => service_template.id,
@@ -145,24 +148,24 @@ describe ServiceTemplate do
     end
 
     it "serializes the enablement" do
-      service_template = FactoryGirl.create(:service_template, :name => "foo")
-      service = FactoryGirl.create(:service, :name => "bar", :service_template => service_template)
+      service_template = FactoryBot.create(:service_template, :name => "foo")
+      service = FactoryBot.create(:service, :name => "bar", :service_template => service_template)
       true_expression = MiqExpression.new("=" => {"field" => "Service-name", "value" => "bar"})
       false_expression = MiqExpression.new("=" => {"field" => "Service-name", "value" => "foo"})
-      FactoryGirl.create(:custom_button,
+      FactoryBot.create(:custom_button,
                          :name                  => "enabled button",
                          :applies_to_class      => "Service",
                          :enablement_expression => true_expression)
-      FactoryGirl.create(:custom_button,
+      FactoryBot.create(:custom_button,
                          :name                  => "disabled button",
                          :applies_to_class      => "Service",
                          :enablement_expression => false_expression)
-      FactoryGirl.create(:custom_button_set).tap do |group|
-        group.add_member(FactoryGirl.create(:custom_button,
+      FactoryBot.create(:custom_button_set).tap do |group|
+        group.add_member(FactoryBot.create(:custom_button,
                                             :name                  => "enabled button in group",
                                             :applies_to_class      => "Service",
                                             :enablement_expression => true_expression))
-        group.add_member(FactoryGirl.create(:custom_button,
+        group.add_member(FactoryBot.create(:custom_button,
                                             :name                  => "disabled button in group",
                                             :applies_to_class      => "Service",
                                             :enablement_expression => false_expression))
@@ -188,26 +191,26 @@ describe ServiceTemplate do
 
   describe "#custom_action_buttons" do
     it "does not show hidden buttons" do
-      service_template = FactoryGirl.create(:service_template, :name => "foo")
+      service_template = FactoryBot.create(:service_template, :name => "foo")
       true_expression = MiqExpression.new("=" => {"field" => "ServiceTemplate-name", "value" => "foo"})
       false_expression = MiqExpression.new("=" => {"field" => "ServiceTemplate-name", "value" => "bar"})
-      visible_button = FactoryGirl.create(:custom_button,
+      visible_button = FactoryBot.create(:custom_button,
                                           :applies_to_class      => "ServiceTemplate",
                                           :applies_to_id         => service_template.id,
                                           :visibility_expression => true_expression)
-      _hidden_button = FactoryGirl.create(:custom_button,
+      _hidden_button = FactoryBot.create(:custom_button,
                                           :applies_to_class      => "ServiceTemplate",
                                           :applies_to_id         => service_template.id,
                                           :visibility_expression => false_expression)
-      visible_button_in_group = FactoryGirl.create(:custom_button,
+      visible_button_in_group = FactoryBot.create(:custom_button,
                                                    :applies_to_class      => "ServiceTemplate",
                                                    :applies_to_id         => service_template.id,
                                                    :visibility_expression => true_expression)
-      hidden_button_in_group = FactoryGirl.create(:custom_button,
+      hidden_button_in_group = FactoryBot.create(:custom_button,
                                                   :applies_to_class      => "ServiceTemplate",
                                                   :applies_to_id         => service_template.id,
                                                   :visibility_expression => false_expression)
-      service_template.custom_button_sets << FactoryGirl.create(:custom_button_set).tap do |group|
+      service_template.custom_button_sets << FactoryBot.create(:custom_button_set).tap do |group|
         group.add_member(visible_button_in_group)
         group.add_member(hidden_button_in_group)
       end
@@ -218,7 +221,7 @@ describe ServiceTemplate do
 
   context "#type_display" do
     before do
-      @st1 = FactoryGirl.create(:service_template, :name => 'Service Template 1')
+      @st1 = FactoryBot.create(:service_template, :name => 'Service Template 1')
     end
 
     it "with default service_type" do
@@ -249,7 +252,7 @@ describe ServiceTemplate do
 
   context "#atomic?" do
     before do
-      @st1 = FactoryGirl.create(:service_template)
+      @st1 = FactoryBot.create(:service_template)
     end
 
     it "with service_type of unknown" do
@@ -268,9 +271,226 @@ describe ServiceTemplate do
     end
   end
 
+  context "#template_copy" do
+    let(:service_template_ansible_tower) { FactoryBot.create(:service_template_ansible_tower, :name => "new_template") }
+    let(:service_template_orchestration) { FactoryBot.create(:service_template_orchestration, :name => "new_template2") }
+    let(:custom_button) { FactoryBot.create(:custom_button, :applies_to_class => "Service") }
+    let(:custom_button_set) { FactoryBot.create(:custom_button_set, :owner => @st1) }
+    before do
+      @st1 = FactoryBot.create(:service_template)
+    end
+
+    context "with given name" do
+      it "without resource " do
+        expect(ServiceTemplate.count).to eq(1)
+        @st1.template_copy("new_template")
+        expect(ServiceTemplate.count).to eq(2)
+        new_service_template = ServiceTemplate.find_by(:name => "new_template")
+        expect(new_service_template.display).to be(false)
+        expect(new_service_template.guid).not_to eq(@st1.guid)
+      end
+
+      it "with custom button" do
+        custom_button
+        expect(@st1.custom_buttons.count).to eq(1)
+        @st1.template_copy("new_template")
+        expect(ServiceTemplate.count).to eq(2)
+        new_service_template = ServiceTemplate.find_by(:name => "new_template")
+        expect(new_service_template.display).to be(false)
+        expect(new_service_template.guid).not_to eq(@st1.guid)
+        expect(new_service_template.custom_buttons.count).to eq(2)
+      end
+
+      it "with custom button set" do
+        custom_button_set.add_member(custom_button)
+        expect(@st1.custom_button_sets.count).to eq(1)
+        @st1.template_copy("new_template")
+        new_service_template = ServiceTemplate.find_by(:name => "new_template")
+        expect(ServiceTemplate.count).to eq(2)
+        expect(new_service_template.display).to be(false)
+        expect(new_service_template.guid).not_to eq(@st1.guid)
+        expect(new_service_template.custom_button_sets.count).to eq(1)
+      end
+
+      it "with non-copyable resource (configuration script base)" do
+        @st1.add_resource(FactoryBot.create(:configuration_script_base))
+        expect(ServiceTemplate.count).to eq(1)
+        @st1.template_copy("new_template")
+        new_service_template = ServiceTemplate.find_by(:name => "new_template")
+        expect(ServiceTemplate.count).to eq(2)
+        expect(@st1.service_resources.first.resource).not_to be(nil)
+        expect(new_service_template.service_resources.first.resource).to eq(@st1.service_resources.first.resource)
+        expect(ConfigurationScriptBase.count).to eq(1)
+        expect(new_service_template.display).to be(false)
+        expect(new_service_template.guid).not_to eq(@st1.guid)
+      end
+
+      it "with non-copyable resource (ext management system)" do
+        @st1.add_resource(FactoryBot.create(:ext_management_system))
+        expect(ServiceTemplate.count).to eq(1)
+        @st1.template_copy("new_template")
+        new_service_template = ServiceTemplate.find_by(:name => "new_template")
+        expect(ServiceTemplate.count).to eq(2)
+        expect(new_service_template.service_resources.first.resource_id).to eq(@st1.service_resources.first.resource_id)
+        expect(ExtManagementSystem.count).to eq(1)
+        expect(new_service_template.guid).not_to eq(@st1.guid)
+        expect(new_service_template.display).to be(false)
+        expect(@st1.service_resources.first.resource).not_to be(nil)
+      end
+
+      it "with non-copyable resource (orchestration template)" do
+        @st1.add_resource(FactoryBot.create(:orchestration_template))
+        expect(ServiceTemplate.count).to eq(1)
+        @st1.template_copy("new_template")
+        new_service_template = ServiceTemplate.find_by(:name => "new_template")
+        expect(ServiceTemplate.count).to eq(2)
+        expect(new_service_template.service_resources.first.resource_id).to eq(@st1.service_resources.first.resource_id)
+        expect(OrchestrationTemplate.count).to eq(1)
+        expect(new_service_template.guid).not_to eq(@st1.guid)
+        expect(new_service_template.display).to be(false)
+        expect(@st1.service_resources.first.resource).not_to be(nil)
+      end
+
+      it "with copyable resource" do
+        admin = FactoryBot.create(:user_admin)
+        vm_template = FactoryBot.create(:vm_openstack, :ext_management_system => FactoryBot.create(:ext_management_system))
+        ptr = FactoryBot.create(:miq_provision_request_template, :requester => admin, :src_vm_id => vm_template.id)
+        @st1.add_resource(ptr)
+        expect(ServiceTemplate.count).to eq(1)
+        @st1.template_copy("new_template")
+        new_service_template = ServiceTemplate.find_by(:name => "new_template")
+        expect(ServiceTemplate.count).to eq(2)
+        expect(MiqProvisionRequestTemplate.count).to eq(2)
+        expect(new_service_template.guid).not_to eq(@st1.guid)
+        expect(new_service_template.display).to be(false)
+        expect(new_service_template.service_resources).not_to be(nil)
+        expect(@st1.service_resources.first.resource).not_to be(nil)
+      end
+
+      it "with copyable resource copies sr options" do
+        admin = FactoryBot.create(:user_admin)
+        vm_template = FactoryBot.create(:vm_openstack, :ext_management_system => FactoryBot.create(:ext_management_system))
+        ptr = FactoryBot.create(:miq_provision_request_template, :requester => admin, :src_vm_id => vm_template.id)
+        @st1.add_resource(ptr)
+        @st1.service_resources.first.update_attributes(:scaling_min => 4)
+        expect(ServiceTemplate.count).to eq(1)
+        expect(@st1.service_resources.first.scaling_min).to eq(4)
+        @st1.template_copy("new_template")
+        new_service_template = ServiceTemplate.find_by(:name => "new_template")
+        expect(ServiceTemplate.count).to eq(2)
+        expect(MiqProvisionRequestTemplate.count).to eq(2)
+        expect(new_service_template.guid).not_to eq(@st1.guid)
+        expect(new_service_template.display).to be(false)
+        expect(new_service_template.service_resources.first.scaling_min).to eq(4)
+        expect(@st1.service_resources.first.resource).not_to be(nil)
+      end
+
+      it "service template ansible tower with copyable resource" do
+        admin = FactoryBot.create(:user_admin)
+        vm_template = FactoryBot.create(:vm_openstack, :ext_management_system => FactoryBot.create(:ext_management_system))
+        ptr = FactoryBot.create(:miq_provision_request_template, :requester => admin, :src_vm_id => vm_template.id)
+        service_template_ansible_tower.add_resource(ptr)
+        expect(ServiceTemplate.count).to eq(2)
+        service_template_ansible_tower.template_copy("new_template_copy")
+        new_service_template = ServiceTemplate.find_by(:name => "new_template_copy")
+        expect(ServiceTemplate.count).to eq(3)
+        expect(MiqProvisionRequestTemplate.count).to eq(2)
+        expect(new_service_template.guid).not_to eq(service_template_ansible_tower.guid)
+        expect(new_service_template.display).to be(false)
+        expect(new_service_template.service_resources).not_to be(nil)
+        expect(service_template_ansible_tower.service_resources.first.resource).not_to be(nil)
+      end
+
+      it "service template orchestration with copyable resource" do
+        admin = FactoryBot.create(:user_admin)
+        vm_template = FactoryBot.create(:vm_openstack, :ext_management_system => FactoryBot.create(:ext_management_system))
+        ptr = FactoryBot.create(:miq_provision_request_template, :requester => admin, :src_vm_id => vm_template.id)
+        service_template_orchestration.add_resource(ptr)
+        expect(ServiceTemplate.count).to eq(2)
+        service_template_orchestration.template_copy("new_template")
+        new_service_template = ServiceTemplate.find_by(:name => "new_template")
+        expect(ServiceTemplate.count).to eq(3)
+        expect(MiqProvisionRequestTemplate.count).to eq(2)
+        expect(new_service_template.guid).not_to eq(service_template_orchestration.guid)
+        expect(new_service_template.display).to be(false)
+        expect(new_service_template.service_resources).not_to be(nil)
+        expect(service_template_orchestration.service_resources.first.resource).not_to be(nil)
+      end
+    end
+
+    context "without given name" do
+      it "without resource" do
+        expect(ServiceTemplate.count).to eq(1)
+        @st1.template_copy
+        new_service_template = ServiceTemplate.find_by("name ILIKE ?", "Copy of service%")
+        expect(ServiceTemplate.count).to eq(2)
+        expect(new_service_template.guid).not_to eq(@st1.guid)
+        expect(new_service_template.display).to be(false)
+        expect(new_service_template.service_resources.count).to eq(0)
+        expect(@st1.service_resources.count).to eq(0)
+      end
+
+      it "with non-copyable resource (configuration_script_base)" do
+        @st1.add_resource(FactoryBot.create(:configuration_script_base))
+        expect(ServiceTemplate.count).to eq(1)
+        @st1.template_copy
+        new_service_template = ServiceTemplate.find_by("name ILIKE ?", "Copy of service%")
+        expect(ServiceTemplate.count).to eq(2)
+        expect(new_service_template.service_resources.first.resource_id).to eq(@st1.service_resources.first.resource_id)
+        expect(ConfigurationScriptBase.count).to eq(1)
+        expect(new_service_template.display).to be(false)
+        expect(new_service_template.guid).not_to eq(@st1.guid)
+      end
+
+      it "with non-copyable resource (ext management system)" do
+        @st1.add_resource(FactoryBot.create(:ext_management_system))
+        expect(ServiceTemplate.count).to eq(1)
+        @st1.template_copy
+        new_service_template = ServiceTemplate.find_by("name ILIKE ?", "Copy of service%")
+        expect(ServiceTemplate.count).to eq(2)
+        expect(ServiceTemplate.where("name ILIKE ?", "Copy of service%").first.service_resources.first.resource_id).to eq(@st1.service_resources.first.resource_id)
+        expect(ExtManagementSystem.count).to eq(1)
+        expect(new_service_template.guid).not_to eq(@st1.guid)
+        expect(new_service_template.display).to be(false)
+        expect(new_service_template.service_resources).not_to be(nil)
+        expect(@st1.service_resources.first.resource).not_to be(nil)
+      end
+
+      it "with non-copyable resource (orchestration template)" do
+        @st1.add_resource(FactoryBot.create(:orchestration_template))
+        expect(ServiceTemplate.count).to eq(1)
+        @st1.template_copy
+        new_service_template = ServiceTemplate.find_by("name ILIKE ?", "Copy of service%")
+        expect(ServiceTemplate.count).to eq(2)
+        expect(ServiceTemplate.where("name ILIKE ?", "Copy of service%").first.service_resources.first.resource_id).to eq(@st1.service_resources.first.resource_id)
+        expect(OrchestrationTemplate.count).to eq(1)
+        expect(new_service_template.guid).not_to eq(@st1.guid)
+        expect(new_service_template.display).to be(false)
+        expect(new_service_template.service_resources).not_to be(nil)
+        expect(@st1.service_resources.first.resource).not_to be(nil)
+      end
+
+      it "with copyable resource" do
+        admin = FactoryBot.create(:user_admin)
+        vm_template = FactoryBot.create(:vm_openstack, :ext_management_system => FactoryBot.create(:ext_management_system))
+        ptr = FactoryBot.create(:miq_provision_request_template, :requester => admin, :src_vm_id => vm_template.id)
+        @st1.add_resource(ptr)
+        expect(ServiceTemplate.count).to eq(1)
+        @st1.template_copy
+        new_service_template = ServiceTemplate.find_by("name ILIKE ?", "Copy of service%")
+        expect(ServiceTemplate.count).to eq(2)
+        expect(MiqProvisionRequestTemplate.count).to eq(2)
+        expect(new_service_template.guid).not_to eq(@st1.guid)
+        expect(new_service_template.display).to be(false)
+        expect(new_service_template.service_resources).not_to be(nil)
+        expect(@st1.service_resources.first.resource).not_to be(nil)
+      end
+    end
+  end
+
   context "#composite?" do
     before do
-      @st1 = FactoryGirl.create(:service_template)
+      @st1 = FactoryBot.create(:service_template)
     end
 
     it "with service_type of unknown" do
@@ -292,7 +512,7 @@ describe ServiceTemplate do
   context "initiator" do
     shared_examples_for 'initiator example' do |initiator, match|
       it 'test initiator' do
-        svc_template = FactoryGirl.create(:service_template, :name => 'Svc A')
+        svc_template = FactoryBot.create(:service_template, :name => 'Svc A')
         options = {:dialog => {}}
         options[:initiator] = initiator if initiator
         svc_task = instance_double("service_task", :options => options, :get_user => service_user)
@@ -313,11 +533,11 @@ describe ServiceTemplate do
 
   context "with multiple services" do
     before do
-      @svc_a = FactoryGirl.create(:service_template, :name => 'Svc A')
-      @svc_b = FactoryGirl.create(:service_template, :name => 'Svc B')
-      @svc_c = FactoryGirl.create(:service_template, :name => 'Svc C')
-      @svc_d = FactoryGirl.create(:service_template, :name => 'Svc D')
-      @svc_e = FactoryGirl.create(:service_template, :name => 'Svc E')
+      @svc_a = FactoryBot.create(:service_template, :name => 'Svc A')
+      @svc_b = FactoryBot.create(:service_template, :name => 'Svc B')
+      @svc_c = FactoryBot.create(:service_template, :name => 'Svc C')
+      @svc_d = FactoryBot.create(:service_template, :name => 'Svc D')
+      @svc_e = FactoryBot.create(:service_template, :name => 'Svc E')
     end
 
     it "should return level 1 sub-services" do
@@ -355,19 +575,41 @@ describe ServiceTemplate do
       expect(sub_svc).to include(@svc_d)
     end
 
-    it "should add_resource! only if a parent_svc exists" do
-      sub_svc = instance_double("service_task", :options => {:dialog => {}}, :get_user => service_user)
-      parent_svc = instance_double("service_task", :options => {:dialog => {}})
-      expect(parent_svc).to receive(:add_resource!).once
+    describe "#create_service" do
+      let(:service_task) do
+        FactoryBot.create(:service_template_provision_task,
+                           :miq_request => service_template_request,
+                           :options     => {:service_resource_id => service_resource.id})
+      end
+      let(:service_template_request) { FactoryBot.create(:service_template_provision_request, :requester => user) }
+      let(:service_resource) do
+        FactoryBot.create(:service_resource,
+                           :resource_type => 'MiqRequest',
+                           :resource_id   => service_template_request.id)
+      end
+      let(:user) { FactoryBot.create(:user) }
+      let(:parent_service) { FactoryBot.create(:service) }
 
-      @svc_a.create_service(sub_svc, parent_svc)
-    end
+      it "create service sets parent service resource resource id" do
+        @svc_a.create_service(service_task, parent_service)
+        parent_service.reload
+        expect(parent_service.service_resources.first.resource).to eq(parent_service.children.first)
+      end
 
-    it "should not call add_resource! if no parent_svc exists" do
-      sub_svc = instance_double("service_task", :options => {:dialog => {}}, :get_user => service_user)
-      expect(sub_svc).to receive(:add_resource!).never
+      it "should add_resource! only if a parent_svc exists" do
+        sub_svc = instance_double("service_task", :options => {:dialog => {}}, :get_user => service_user)
+        parent_svc = instance_double("service_task", :options => {:dialog => {}}, :service_resources => instance_double('service_resource'))
+        expect(parent_svc).to receive(:add_resource!).once
 
-      @svc_a.create_service(sub_svc)
+        @svc_a.create_service(sub_svc, parent_svc)
+      end
+
+      it "should not call add_resource! if no parent_svc exists" do
+        sub_svc = instance_double("service_task", :options => {:dialog => {}}, :get_user => service_user)
+        expect(sub_svc).to receive(:add_resource!).never
+
+        @svc_a.create_service(sub_svc)
+      end
     end
 
     it "should pass display attribute to created top level service" do
@@ -435,7 +677,7 @@ describe ServiceTemplate do
     end
 
     it "should allow service template to connect to a service with the same id" do
-      svc = FactoryGirl.create(:service)
+      svc = FactoryBot.create(:service)
       svc.id = @svc_a.id
       expect { svc << @svc_a }.to_not raise_error
     end
@@ -455,9 +697,9 @@ describe ServiceTemplate do
 
   context "with a small env" do
     before do
-      @zone1 = FactoryGirl.create(:small_environment)
+      @zone1 = FactoryBot.create(:small_environment)
       allow(MiqServer).to receive(:my_server).and_return(@zone1.miq_servers.first)
-      @st1 = FactoryGirl.create(:service_template, :name => 'Service Template 1')
+      @st1 = FactoryBot.create(:service_template, :name => 'Service Template 1')
     end
 
     it "should create a valid service template" do
@@ -468,15 +710,15 @@ describe ServiceTemplate do
 
     it "should not set the owner for the service template" do
       @user         = nil
-      @test_service = FactoryGirl.create(:service, :name => 'test service')
+      @test_service = FactoryBot.create(:service, :name => 'test service')
       expect(@test_service.evm_owner).to be_nil
       @st1.set_ownership(@test_service, @user)
       expect(@test_service.evm_owner).to be_nil
     end
 
     it "should set the owner and group for the service template" do
-      @user         = FactoryGirl.create(:user_with_group)
-      @test_service = FactoryGirl.create(:service, :name => 'test service')
+      @user         = FactoryBot.create(:user_with_group)
+      @test_service = FactoryBot.create(:service, :name => 'test service')
       expect(@test_service.evm_owner).to be_nil
       @st1.set_ownership(@test_service, @user)
       expect(@test_service.evm_owner.name).to eq(@user.name)
@@ -485,7 +727,7 @@ describe ServiceTemplate do
     end
 
     it "should create a composite service template" do
-      st2 = FactoryGirl.create(:service_template, :name => 'Service Template 2')
+      st2 = FactoryBot.create(:service_template, :name => 'Service Template 2')
       @st1.add_resource(st2)
       expect(@st1.service_resources.size).to eq(1)
       expect(@st1.composite?).to be_truthy
@@ -502,10 +744,10 @@ describe ServiceTemplate do
 
     context "with a VM Provision Request Template" do
       before do
-        admin = FactoryGirl.create(:user_admin)
+        admin = FactoryBot.create(:user_admin)
 
         vm_template = Vm.first
-        ptr = FactoryGirl.create(:miq_provision_request_template, :requester => admin, :src_vm_id => vm_template.id)
+        ptr = FactoryBot.create(:miq_provision_request_template, :requester => admin, :src_vm_id => vm_template.id)
         @st1.add_resource(ptr)
       end
 
@@ -527,11 +769,11 @@ describe ServiceTemplate do
 
   context 'validate template' do
     before do
-      @st1 = FactoryGirl.create(:service_template, :name => 'Service Template 1')
+      @st1 = FactoryBot.create(:service_template, :name => 'Service Template 1')
 
-      user         = FactoryGirl.create(:user, :name => 'Fred Flintstone', :userid => 'fred')
-      @vm_template = FactoryGirl.create(:template_vmware, :ext_management_system => FactoryGirl.create(:ems_vmware_with_authentication))
-      @ptr = FactoryGirl.create(:miq_provision_request_template, :requester => user, :src_vm_id => @vm_template.id)
+      user         = FactoryBot.create(:user, :name => 'Fred Flintstone', :userid => 'fred')
+      @vm_template = FactoryBot.create(:template_vmware, :ext_management_system => FactoryBot.create(:ems_vmware_with_authentication))
+      @ptr = FactoryBot.create(:miq_provision_request_template, :requester => user, :src_vm_id => @vm_template.id)
     end
 
     context 'atomic' do
@@ -578,7 +820,7 @@ describe ServiceTemplate do
     context 'composite' do
       before do
         @st1.add_resource(@ptr)
-        @st2 = FactoryGirl.create(:service_template, :name => 'Service Template 2')
+        @st2 = FactoryBot.create(:service_template, :name => 'Service Template 2')
         @st2.add_resource(@st1)
       end
 
@@ -630,16 +872,16 @@ describe ServiceTemplate do
 
   describe "#provision_action" do
     it "returns the provision action" do
-      provision_action = FactoryGirl.create(:resource_action, :action => "Provision")
-      service_template = FactoryGirl.create(:service_template, :resource_actions => [provision_action])
+      provision_action = FactoryBot.create(:resource_action, :action => "Provision")
+      service_template = FactoryBot.create(:service_template, :resource_actions => [provision_action])
       expect(service_template.provision_action).to eq(provision_action)
     end
   end
 
   describe '#config_info' do
     before do
-      @user = FactoryGirl.create(:user_with_group)
-      @ra = FactoryGirl.create(:resource_action, :action => 'Provision', :fqname => '/a/b/c')
+      @user = FactoryBot.create(:user_with_group)
+      @ra = FactoryBot.create(:resource_action, :action => 'Provision', :fqname => '/a/b/c')
     end
 
     it 'returns the config_info passed to #create_catalog_item' do
@@ -660,9 +902,9 @@ describe ServiceTemplate do
     end
 
     it 'will build the config_info if not created through #create_catalog_item' do
-      dialog = FactoryGirl.create(:dialog)
-      template = FactoryGirl.create(:service_template)
-      request = FactoryGirl.create(:service_template_provision_request,
+      dialog = FactoryBot.create(:dialog)
+      template = FactoryBot.create(:service_template)
+      request = FactoryBot.create(:service_template_provision_request,
                                    :requester => @user,
                                    :options   => {:foo => 'bar', :baz => nil })
       template.create_resource_actions(:provision => { :fqname => @ra.fqname, :dialog_id => dialog.id })
@@ -694,20 +936,35 @@ describe ServiceTemplate do
     end
   end
 
-  let(:user) { FactoryGirl.create(:user_with_group) }
-  let(:ra1) { FactoryGirl.create(:resource_action, :action => 'Provision') }
-  let(:ra2) { FactoryGirl.create(:resource_action, :action => 'Retirement') }
-  let(:ems) { FactoryGirl.create(:ems_amazon) }
-  let(:vm) { FactoryGirl.create(:vm_amazon, :ext_management_system => ems) }
-  let(:flavor) { FactoryGirl.create(:flavor_amazon) }
-  let(:request_dialog) { FactoryGirl.create(:miq_dialog_provision) }
-  let(:service_dialog) { FactoryGirl.create(:dialog) }
+  let(:user) { FactoryBot.create(:user_with_group) }
+  let(:ra1) { FactoryBot.create(:resource_action, :action => 'Provision') }
+  let(:ra2) { FactoryBot.create(:resource_action, :action => 'Retirement') }
+  let(:ems) { FactoryBot.create(:ems_amazon) }
+  let(:content) do
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAABGdBTUEAALGP"\
+      "C/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3Cc"\
+      "ulE8AAAACXBIWXMAAAsTAAALEwEAmpwYAAABWWlUWHRYTUw6Y29tLmFkb2Jl"\
+      "LnhtcAAAAAAAPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIg"\
+      "eDp4bXB0az0iWE1QIENvcmUgNS40LjAiPgogICA8cmRmOlJERiB4bWxuczpy"\
+      "ZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1u"\
+      "cyMiPgogICAgICA8cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0iIgogICAg"\
+      "ICAgICAgICB4bWxuczp0aWZmPSJodHRwOi8vbnMuYWRvYmUuY29tL3RpZmYv"\
+      "MS4wLyI+CiAgICAgICAgIDx0aWZmOk9yaWVudGF0aW9uPjE8L3RpZmY6T3Jp"\
+      "ZW50YXRpb24+CiAgICAgIDwvcmRmOkRlc2NyaXB0aW9uPgogICA8L3JkZjpS"\
+      "REY+CjwveDp4bXBtZXRhPgpMwidZAAAADUlEQVQIHWNgYGCwBQAAQgA+3N0+"\
+      "xQAAAABJRU5ErkJggg=="
+  end
+  let(:vm) { FactoryBot.create(:vm_amazon, :ext_management_system => ems) }
+  let(:flavor) { FactoryBot.create(:flavor_amazon) }
+  let(:request_dialog) { FactoryBot.create(:miq_dialog_provision) }
+  let(:service_dialog) { FactoryBot.create(:dialog) }
   let(:catalog_item_options) do
     {
       :name         => 'Atomic Service Template',
       :service_type => 'atomic',
       :prov_type    => 'amazon',
       :display      => 'false',
+      :picture      => { :content => content, :extension => 'jpg' },
       :description  => 'a description',
       :config_info  => {
         :miq_request_dialog_name => request_dialog.name,
@@ -736,6 +993,7 @@ describe ServiceTemplate do
 
       expect(service_template.name).to eq('Atomic Service Template')
       expect(service_template.service_resources.count).to eq(1)
+      expect(Base64.strict_encode64(service_template.picture.content)).to start_with('aVZCT1J3MEtHZ29BQUFBTlNVaEVVZ0FBQUFFQUFBQUJDQVlBQ')
       expect(service_template.service_resources.first.resource_type).to eq('MiqRequest')
       expect(service_template.dialogs.first).to eq(service_dialog)
       expect(service_template.resource_actions.pluck(:action)).to include('Provision', 'Retirement')
@@ -744,14 +1002,37 @@ describe ServiceTemplate do
       expect(service_template.resource_actions.last.dialog).to eq(service_dialog)
       expect(service_template.config_info).to eq(catalog_item_options[:config_info])
     end
+
+    context "with an existing picture" do
+      let(:picture) { Picture.create(catalog_item_options.delete(:picture)) }
+
+      it "creates the picture without error" do
+        expect {
+          service_template = ServiceTemplate.create_catalog_item(catalog_item_options, user)
+          service_template.picture = picture
+        }.not_to raise_error
+      end
+
+      it "has the picture assigned properly" do
+        service_template = ServiceTemplate.create_catalog_item(catalog_item_options, user)
+        service_template.picture = picture
+        service_template.save
+
+        service_template.reload
+
+        expect(service_template.picture.id).to eq picture.id
+      end
+    end
   end
 
   describe '#update_catalog_item' do
-    let(:new_vm) { FactoryGirl.create(:vm_amazon, :ext_management_system => ems) }
+    let(:new_vm) { FactoryBot.create(:vm_amazon, :ext_management_system => ems) }
+    let(:new_picture_content) { "iVBORw0KGgoAAAAN" }
     let(:updated_catalog_item_options) do
       {
         :name        => 'Updated Template Name',
         :display     => 'false',
+        :picture     => { :content => new_picture_content, :extension => 'jpg' },
         :description => 'a description',
         :config_info => {
           :miq_request_dialog_name => request_dialog.name,
@@ -779,19 +1060,40 @@ describe ServiceTemplate do
       @catalog_item.update_attributes!(:options => @catalog_item.options.merge(:foo => 'bar'))
     end
 
-    it 'updates the catalog item' do
-      updated = @catalog_item.update_catalog_item(updated_catalog_item_options, user)
+    context "without config info" do
+      it 'updates the catalog item' do
+        updated = @catalog_item.update_catalog_item(updated_catalog_item_options, user)
 
-      # Removes Retirement / Adds Reconfigure
-      expect(updated.resource_actions.pluck(:action)).to match_array(%w(Provision Reconfigure))
-      expect(updated.resource_actions.first.dialog_id).to be_nil # Removes the dialog from Provision
-      expect(updated.resource_actions.first.fqname).to eq('/a1/b1/c1')
-      expect(updated.resource_actions.last.dialog).to eq(service_dialog)
-      expect(updated.resource_actions.last.fqname).to eq('/x1/y1/z1')
-      expect(updated.name).to eq('Updated Template Name')
-      expect(updated.service_resources.first.resource.source_id).to eq(new_vm.id) # Validate request update
-      expect(updated.config_info).to eq(updated_catalog_item_options[:config_info])
-      expect(updated.options.key?(:foo)).to be_truthy # Test that the options were merged
+        # Removes Retirement / Adds Reconfigure
+        expect(updated.resource_actions.pluck(:action)).to match_array(%w[Provision Reconfigure])
+        expect(updated.resource_actions.first.dialog_id).to be_nil # Removes the dialog from Provision
+        expect(updated.resource_actions.first.fqname).to eq('/a1/b1/c1')
+        expect(updated.resource_actions.last.dialog).to eq(service_dialog)
+        expect(updated.resource_actions.last.fqname).to eq('/x1/y1/z1')
+        expect(updated.name).to eq('Updated Template Name')
+        expect(Base64.strict_encode64(updated.picture.content)).to eq('aVZCT1J3MEtHZ29BQUFBTg==')
+        expect(updated.service_resources.first.resource.source_id).to eq(new_vm.id) # Validate request update
+        expect(updated.config_info).to eq(updated_catalog_item_options[:config_info])
+        expect(updated.options.key?(:foo)).to be_truthy # Test that the options were merged
+      end
+    end
+
+    context "with config info" do
+      it 'updates the catalog item' do
+        @catalog_item.update_attributes!(:options => @catalog_item.options.merge(:config_info => 'bar'))
+        updated = @catalog_item.update_catalog_item(updated_catalog_item_options, user)
+
+        expect(updated.resource_actions.pluck(:action)).to match_array(%w[Provision Reconfigure])
+        expect(updated.resource_actions.first.dialog_id).to be_nil # Removes the dialog from Provision
+        expect(updated.resource_actions.first.fqname).to eq('/a1/b1/c1')
+        expect(updated.resource_actions.last.dialog).to eq(service_dialog)
+        expect(updated.resource_actions.last.fqname).to eq('/x1/y1/z1')
+        expect(updated.name).to eq('Updated Template Name')
+        expect(Base64.strict_encode64(updated.picture.content)).to eq('aVZCT1J3MEtHZ29BQUFBTg==')
+        expect(updated.service_resources.first.resource.source_id).to eq(new_vm.id) # Validate request update
+        expect(updated.config_info).to eq(updated_catalog_item_options[:config_info])
+        expect(updated.options.key?(:foo)).to be_truthy # Test that the options were merged
+      end
     end
 
     it 'does not allow service_type to be changed' do
@@ -824,11 +1126,11 @@ describe ServiceTemplate do
   end
 
   context "#order" do
-    let(:user) { FactoryGirl.create(:user, :userid => "barney") }
-    let(:resource_action) { FactoryGirl.create(:resource_action, :action => "Provision") }
-    let(:service_template) { FactoryGirl.create(:service_template, :resource_actions => [resource_action]) }
+    let(:user) { FactoryBot.create(:user, :userid => "barney") }
+    let(:resource_action) { FactoryBot.create(:resource_action, :action => "Provision") }
+    let(:service_template) { FactoryBot.create(:service_template, :resource_actions => [resource_action]) }
     let(:resource_action_options) { {:target => service_template, :initiator => 'control', :submit_workflow => true} }
-    let(:miq_request) { FactoryGirl.create(:service_template_provision_request) }
+    let(:miq_request) { FactoryBot.create(:service_template_provision_request) }
     let!(:resource_action_workflow) { ResourceActionWorkflow.new({}, user, resource_action, resource_action_options) }
 
     before do
@@ -979,7 +1281,7 @@ describe ServiceTemplate do
     end
 
     it "returns orchestration template and generic" do
-      FactoryGirl.create(:orchestration_template)
+      FactoryBot.create(:orchestration_template)
       expect(ServiceTemplate.catalog_item_types).to match(
         hash_including('amazon'                => { :description => 'Amazon',
                                                     :display     => false },
@@ -992,7 +1294,7 @@ describe ServiceTemplate do
   end
 
   context "#archive" do
-    let(:service_template) { FactoryGirl.create(:service_template, :miq_requests => miq_requests) }
+    let(:service_template) { FactoryBot.create(:service_template, :miq_requests => miq_requests) }
     context "with no MiqRequests" do
       let(:miq_requests) { [] }
 
@@ -1003,7 +1305,7 @@ describe ServiceTemplate do
     end
 
     context "with no active MiqRequests" do
-      let(:miq_requests) { [FactoryGirl.create(:service_template_provision_request, :request_state => "finished")] }
+      let(:miq_requests) { [FactoryBot.create(:service_template_provision_request, :request_state => "finished")] }
       it "archives the service_template" do
         service_template.archive
         expect(service_template.reload.archived?).to be_truthy
@@ -1013,8 +1315,8 @@ describe ServiceTemplate do
     context "with an active MiqRequest" do
       let(:miq_requests) do
         [
-          FactoryGirl.create(:service_template_provision_request, :request_state => "finished"),
-          FactoryGirl.create(:service_template_provision_request, :request_state => "queued"),
+          FactoryBot.create(:service_template_provision_request, :request_state => "finished"),
+          FactoryBot.create(:service_template_provision_request, :request_state => "queued"),
         ]
       end
 

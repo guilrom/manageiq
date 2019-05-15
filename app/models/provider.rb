@@ -5,6 +5,7 @@ class Provider < ApplicationRecord
   include EmsRefresh::Manager
   include SupportsFeatureMixin
   include TenancyMixin
+  include UuidMixin
 
   belongs_to :tenant
   belongs_to :zone
@@ -18,6 +19,7 @@ class Provider < ApplicationRecord
            :url,
            :to => :default_endpoint
 
+  virtual_column :url,               :type => :string, :uses => :endpoints
   virtual_column :verify_ssl,        :type => :integer
   virtual_column :security_protocol, :type => :string
 

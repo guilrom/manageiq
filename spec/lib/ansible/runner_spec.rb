@@ -2,6 +2,7 @@ describe Ansible::Runner do
   let(:uuid)       { "201ac780-7bf4-0136-3b9e-54e1ad8b3cf4" }
   let(:env_vars)   { {"ENV1" => "VAL1", "ENV2" => "VAL2"} }
   let(:extra_vars) { {"id" => uuid} }
+  let(:tags)       { "tag" }
 
   describe ".run" do
     let(:playbook) { "/path/to/my/playbook" }
@@ -19,6 +20,20 @@ describe Ansible::Runner do
         .with(env_vars, a_string_including(*expected_command_line), {})
 
       described_class.run(env_vars, extra_vars, playbook)
+    end
+
+    it "calls launch with expected tag" do
+      extra_vars_and_tag = "--extra-vars\\ \\\\\\{\\\\\\\"id\\\\\\\":\\\\\\\"#{uuid}\\\\\\\"\\\\\\}\\ --tags\\ tag"
+
+      expected_command_line = [
+        "ansible-runner run",
+        "--json --playbook /path/to/my/playbook --ident result --hosts localhost --cmdline #{extra_vars_and_tag}"
+      ]
+
+      expect(AwesomeSpawn).to receive(:launch)
+        .with(env_vars, a_string_including(*expected_command_line), {})
+
+      described_class.run(env_vars, extra_vars, playbook, :tags => tags)
     end
 
     context "with special characters" do
@@ -61,8 +76,8 @@ describe Ansible::Runner do
 
   describe ".run_queue" do
     let(:playbook) { "/path/to/my/playbook" }
-    let(:zone)     { FactoryGirl.create(:zone) }
-    let(:user)     { FactoryGirl.create(:user) }
+    let(:zone)     { FactoryBot.create(:zone) }
+    let(:user)     { FactoryBot.create(:user) }
 
     it "queues Ansible::Runner.run in the right zone" do
       described_class.run_queue(env_vars, extra_vars, playbook, user.name, :zone => zone.name)
@@ -87,6 +102,17 @@ describe Ansible::Runner do
         .with(env_vars, a_string_including(*expected_command_line), {})
       described_class.run_role(env_vars, extra_vars, role_name, :roles_path => role_path)
     end
+
+    it "runs ansible-runner with role and tag" do
+      expected_command_line = [
+        "ansible-runner run",
+        "--extra-vars\\ \\\\\\{\\\\\\\"id\\\\\\\":\\\\\\\"201ac780-7bf4-0136-3b9e-54e1ad8b3cf4\\\\\\\"\\\\\\}\\ --tags\\ tag"
+      ]
+
+      expect(AwesomeSpawn).to receive(:launch)
+        .with(env_vars, a_string_including(*expected_command_line), {})
+      described_class.run_role(env_vars, extra_vars, role_name, :roles_path => role_path, :tags => tags)
+    end
   end
 
   describe ".run_role_async" do
@@ -109,8 +135,8 @@ describe Ansible::Runner do
   describe ".run_role_queue" do
     let(:role_name) { "my-custom-role" }
     let(:role_path) { "/path/to/my/roles" }
-    let(:zone)      { FactoryGirl.create(:zone) }
-    let(:user)      { FactoryGirl.create(:user) }
+    let(:zone)      { FactoryBot.create(:zone) }
+    let(:user)      { FactoryBot.create(:user) }
 
     it "queues Ansible::Runner.run in the right zone" do
       described_class.run_role_queue(env_vars, extra_vars, role_name, user.name, {:zone => zone.name}, :roles_path => role_path)

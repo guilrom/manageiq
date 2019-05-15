@@ -20,19 +20,21 @@ module EvmDba
   end
 
   def self.with_options(*option_types, &block)
-    require 'trollop'
+    require 'optimist'
 
-    Trollop.options(EvmRakeHelper.extract_command_options) do
+    Optimist.options(EvmRakeHelper.extract_command_options) do
       option_types.each do |type|
         case type
         when :db_credentials
           opt :username,           "Username",                     :type => :string
           opt :password,           "Password",                     :type => :string
           opt :hostname,           "Hostname",                     :type => :string
+          opt :port,               "Port",                         :type => :string
           opt :dbname,             "Database name",                :type => :string
         when :local_file
           opt :local_file,         "Destination file",             :type => :string, :required => true
         when :remote_file
+          opt :skip_directory,     "Don't add backup directory",   :type => :boolean, :default => false
           opt :remote_file_name,   "Destination depot filename",   :type => :string
         when :splitable
           opt :byte_count,         "Size to split files into",     :type => :string
@@ -50,14 +52,14 @@ module EvmDba
     end.delete_nils
   end
 
-  DB_OPT_KEYS = [:dbname, :username, :password, :hostname, :exclude_table_data, :byte_count].freeze
+  DB_OPT_KEYS = [:dbname, :username, :password, :hostname, :port, :exclude_table_data, :byte_count].freeze
   def self.collect_db_opts(opts)
     db_opts = {}
     DB_OPT_KEYS.each { |k| db_opts[k] = opts[k] if opts[k] }
     db_opts
   end
 
-  CONNECT_OPT_KEYS = [:uri, :uri_username, :uri_password, :aws_region, :remote_file_name].freeze
+  CONNECT_OPT_KEYS = %i(uri uri_username uri_password aws_region remote_file_name skip_directory).freeze
   def self.collect_connect_opts(opts)
     connect_opts = {}
     CONNECT_OPT_KEYS.each { |k| connect_opts[k] = opts[k] if opts[k] }
@@ -266,8 +268,8 @@ namespace :evm do
 
     # loads the v1 key into the enviroment
     task :environmentlegacykey => :environment do
-      MiqPassword.add_legacy_key('v0_key', :v0)
-      MiqPassword.add_legacy_key('v1_key', :v1)
+      ManageIQ::Password.add_legacy_key('v0_key', :v0)
+      ManageIQ::Password.add_legacy_key('v1_key', :v1)
     end
   end
 end

@@ -1,4 +1,6 @@
 class MiqRegion < ApplicationRecord
+  belongs_to :maintenance_zone, :class_name => 'Zone', :inverse_of => false
+
   has_many :metrics,        :as => :resource # Destroy will be handled by purger
   has_many :metric_rollups, :as => :resource # Destroy will be handled by purger
   has_many :vim_performance_states, :as => :resource # Destroy will be handled by purger
@@ -128,11 +130,11 @@ class MiqRegion < ApplicationRecord
     tables.each do |t|
       pk = conn.primary_key(t)
       if pk
-        conditions = sanitize_conditions(region_to_conditions(region, pk))
+        conditions = sanitize_sql(region_to_conditions(region, pk))
       else
         id_cols = connection.columns(t).select { |c| c.name.ends_with?("_id") }
         next if id_cols.empty?
-        conditions = id_cols.collect { |c| "(#{sanitize_conditions(region_to_conditions(region, c.name))})" }.join(" OR ")
+        conditions = id_cols.collect { |c| "(#{sanitize_sql(region_to_conditions(region, c.name))})" }.join(" OR ")
       end
 
       rows = conn.delete("DELETE FROM #{t} WHERE #{conditions}")
@@ -146,10 +148,6 @@ class MiqRegion < ApplicationRecord
 
   def self.global_replication_type?
     MiqPglogical.new.subscriber?
-  end
-
-  def self.replication_enabled?
-    MiqPglogical.new.node?
   end
 
   def self.replication_type
@@ -269,7 +267,7 @@ class MiqRegion < ApplicationRecord
       :userid      => userid,
       :timestamp   => Time.now.utc
     }
-    MiqPassword.encrypt(token_hash.to_yaml)
+    ManageIQ::Password.encrypt(token_hash.to_yaml)
   end
 
   def self.api_system_auth_token_for_region(region_id, user)

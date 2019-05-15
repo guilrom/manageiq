@@ -36,7 +36,32 @@ module MiqReport::ImportExport
       report[:db_options].deep_symbolize_keys! if report[:db_options]
 
       user = options[:user] || User.find_by_userid(options[:userid])
-      report.merge!("miq_group_id" => user.current_group_id, "user_id" => user.id)
+
+      if options[:preserve_owner]
+        userid = report.delete("userid")
+        group_description = report.delete("group_description")
+
+        report_user = userid.present? ? User.find_by_userid(userid) : User.find_by(:id => report["user_id"])
+        if report_user.nil?
+          _log.warn("User '#{userid.presence || report["user_id"]}' for imporeted report '#{report["name"]}' was not found")
+          report.delete("user_id")
+        else
+          report["user_id"] = report_user.id
+        end
+
+        group = group_description.present? ? MiqGroup.in_my_region.find_by(:description => group_description) : MiqGroup.find_by(:id => report["miq_group_id"])
+        if group.nil?
+          _log.warn("Group '#{group_description}' for imporeted report '#{report["name"]}' was not found")
+          report.delete("miq_group_id")
+        else
+          report["miq_group_id"] = group.id
+        end
+
+        raise _("Neither user or group to be preserved during import were found") if report_user.nil? && group.nil?
+      else
+        report["miq_group_id"] = user.current_group_id
+        report["user_id"] = user.id
+      end
 
       report["name"] = report.delete("menu_name")
       rep = MiqReport.find_by(:name => report["name"])
@@ -82,10 +107,16 @@ module MiqReport::ImportExport
     # @param cache [Hash] cache that holds yaml for the views
     def load_from_view_options(db, current_user = nil, options = {}, cache = {})
       filename = MiqReport.view_yaml_filename(db, current_user, options)
-      yaml     = cache[filename] ||= YAML.load_file(filename)
-      view     = MiqReport.new(yaml)
-      view.db  = db if filename.ends_with?("Vm__restricted.yaml")
+      view = load_from_filename(filename, cache)
+      view.db = db if filename.ends_with?("Vm__restricted.yaml")
+      view
+    end
+
+    def load_from_filename(filename, cache)
+      yaml = cache[filename] ||= YAML.load_file(filename)
+      view = MiqReport.new(yaml)
       view.extras ||= {}                        # Always add in the extras hash
+      view.extras[:filename] = File.basename(filename, '.yaml')
       view
     end
 
@@ -119,6 +150,8 @@ module MiqReport::ImportExport
     h = attributes
     ["id", "created_on", "updated_on"].each { |k| h.delete(k) }
     h["menu_name"] = h.delete("name")
+    h["userid"] = User.find_by(:id => h["user_id"])&.userid.to_s
+    h["group_description"] = MiqGroup.find_by(:id => h["miq_group_id"])&.description.to_s
     [{self.class.to_s => h}]
   end
 end

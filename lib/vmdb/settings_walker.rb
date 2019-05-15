@@ -20,13 +20,14 @@ module Vmdb
           key_path = path.dup << key
 
           yield key, value, key_path, settings
+          next if key == settings || value == settings
 
           case value
           when settings.class
             walk(value, key_path, &block)
           when Array
             value.each_with_index do |v, i|
-              walk(v, key_path.dup << i, &block) if v.kind_of?(settings.class)
+              walk(v, key_path.dup << i, &block) if v.kind_of?(settings.class) && v != settings
             end
           end
         end
@@ -53,14 +54,14 @@ module Vmdb
       #
       # @param settings (see .walk)
       def decrypt_passwords!(settings)
-        walk_passwords(settings) { |k, v, h| h[k] = MiqPassword.try_decrypt(v) }
+        walk_passwords(settings) { |k, v, h| h[k] = ManageIQ::Password.try_decrypt(v) }
       end
 
       # Walks the settings and encrypts passwords it finds
       #
       # @param settings (see .walk)
       def encrypt_passwords!(settings)
-        walk_passwords(settings) { |k, v, h| h[k] = MiqPassword.try_encrypt(v) }
+        walk_passwords(settings) { |k, v, h| h[k] = ManageIQ::Password.try_encrypt(v) }
       end
     end
 

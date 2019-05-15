@@ -2,7 +2,7 @@ require_relative 'helpers/spec_parsed_data'
 require_relative 'test_persister'
 require_relative 'targeted_refresh_spec_helper'
 
-describe ManageIQ::Providers::Inventory::Persister do
+RSpec.describe ManageIQ::Providers::Inventory::Persister do
   include SpecParsedData
   include TargetedRefreshSpecHelper
 
@@ -11,13 +11,12 @@ describe ManageIQ::Providers::Inventory::Persister do
   ######################################################################################################################
   #
   before do
-    @zone = FactoryGirl.create(:zone)
-    @ems  = FactoryGirl.create(:ems_cloud,
+    @zone = FactoryBot.create(:zone)
+    @ems  = FactoryBot.create(:ems_cloud,
                                :zone            => @zone,
-                               :network_manager => FactoryGirl.create(:ems_network, :zone => @zone))
+                               :network_manager => FactoryBot.create(:ems_network, :zone => @zone))
 
     allow(@ems.class).to receive(:ems_type).and_return(:mock)
-    allow(Settings.ems_refresh).to receive(:mock).and_return({})
   end
 
   let(:persister) { create_persister }

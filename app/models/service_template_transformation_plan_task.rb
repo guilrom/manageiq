@@ -32,8 +32,7 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
   end
 
   def update_transformation_progress(progress)
-    options[:progress] = (options[:progress] || {}).merge(progress)
-    save
+    update_options(:progress => (options[:progress] || {}).merge(progress))
   end
 
   def task_finished
@@ -52,12 +51,12 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
   # This method returns true if all mappings are ok. It also preload
   #  virtv2v_disks and network_mappings in task options
   def preflight_check
+    raise 'OSP destination and source power_state is off' if destination_ems.emstype == 'openstack' && source.power_state == 'off'
+    update_options(:source_vm_power_state => source.power_state) # This will determine power_state of destination_vm
     destination_cluster
     virtv2v_disks
     network_mappings
-    true
-  rescue
-    false
+    update_attributes(:state => 'migrate')
   end
 
   def source_cluster
@@ -83,30 +82,15 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
   end
 
   def virtv2v_disks
-    options[:virtv2v_disks] ||= source.hardware.disks.select { |d| d.device_type == 'disk' }.collect do |disk|
-      source_storage = disk.storage
-      destination_storage = transformation_destination(disk.storage)
-      raise "[#{source.name}] Disk #{disk.device_name} [#{source_storage.name}] has no mapping." if destination_storage.nil?
-      {
-        :path    => disk.filename,
-        :size    => disk.size,
-        :percent => 0,
-        :weight  => disk.size.to_f / source.allocated_disk_storage.to_f * 100
-      }
-    end
+    return options[:virtv2v_disks] if options[:virtv2v_disks].present?
+    update_options(:virtv2v_disks => calculate_virtv2v_disks)
+    options[:virtv2v_disks]
   end
 
   def network_mappings
-    options[:network_mappings] ||= source.hardware.nics.select { |n| n.device_type == 'ethernet' }.collect do |nic|
-      source_network = nic.lan
-      destination_network = transformation_destination(source_network)
-      raise "[#{source.name}] NIC #{nic.device_name} [#{source_network.name}] has no mapping." if destination_network.nil?
-      {
-        :source      => source_network.name,
-        :destination => destination_network_ref(destination_network),
-        :mac_address => nic.address
-      }
-    end
+    return options[:network_mappings] if options[:network_mappings].present?
+    update_options(:network_mappings => calculate_network_mappings)
+    options[:network_mappings]
   end
 
   def destination_network_ref(network)
@@ -122,23 +106,27 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
   end
 
   def destination_flavor
-    Flavor.find_by(:id => miq_request.source.options[:config_info][:osp_flavor])
+    Flavor.find_by(:id => vm_resource.options["osp_flavor_id"])
   end
 
   def destination_security_group
-    SecurityGroup.find_by(:id => miq_request.source.options[:config_info][:osp_security_group])
+    SecurityGroup.find_by(:id => vm_resource.options["osp_security_group_id"])
   end
 
-  def transformation_log
+  def valid_transformation_log_types
+    %w(v2v wrapper)
+  end
+
+  def transformation_log(log_type = 'v2v')
     if conversion_host.nil?
       msg = "Conversion host was not found. Download of transformation log aborted."
       _log.error(msg)
       raise MiqException::Error, msg
     end
 
-    logfile = options.fetch_path(:virtv2v_wrapper, "v2v_log")
+    logfile = options.fetch_path(:virtv2v_wrapper, "#{log_type}_log")
     if logfile.blank?
-      msg = "The location of transformation log was not set. Download of transformation log aborted."
+      msg = "The location of #{log_type} log was not set. Download of #{log_type} log aborted."
       _log.error(msg)
       raise MiqException::Error, msg
     end
@@ -148,26 +136,31 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
 
   # Intend to be called by UI to display transformation log. The log is stored in MiqTask#task_results
   # Since the task_results may contain a large block of data, it is desired to remove the task upon receiving the data
-  def transformation_log_queue(userid = nil)
+  def transformation_log_queue(userid = nil, log_type = 'v2v')
+    raise "Transformation log type '#{log_type}' not supported" unless valid_transformation_log_types.include?(log_type)
     userid ||= User.current_userid || 'system'
     if conversion_host.nil?
-      msg = "Conversion host was not found. Cannot queue the download of transformation log."
+      msg = "Conversion host was not found. Cannot queue the download of #{log_type} log."
       return create_error_status_task(userid, msg).id
     end
 
-    _log.info("Queuing the download of transformation log for #{description} with ID [#{id}]")
-    options = {:userid => userid, :action => 'transformation_log'}
+    _log.info("Queuing the download of #{log_type} log for #{description} with ID [#{id}]")
+    task_options = {:userid => userid, :action => 'transformation_log'}
     queue_options = {:class_name  => self.class,
                      :method_name => 'transformation_log',
                      :instance_id => id,
-                     :priority    => MiqQueue::HIGH_PRIORITY,
-                     :args        => [],
+                     :args        => [log_type],
                      :zone        => conversion_host.resource.my_zone}
-    MiqTask.generic_action_with_callback(options, queue_options)
+    MiqTask.generic_action_with_callback(task_options, queue_options)
+  end
+
+  def infra_conversion_job
+    Job.find(options[:infra_conversion_job_id])
   end
 
   def cancel
     update_attributes(:cancelation_status => MiqRequestTask::CANCEL_STATUS_REQUESTED)
+    infra_conversion_job.cancel
   end
 
   def canceling
@@ -184,48 +177,65 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
     destination_cluster = transformation_destination(source_cluster)
     destination_storage = transformation_destination(source_storage)
 
-    options = {
+    results = {
       :source_disks     => virtv2v_disks.map { |disk| disk[:path] },
       :network_mappings => network_mappings
     }
 
-    options.merge!(send("conversion_options_source_provider_#{source_ems.emstype}_#{source_transport_method}", source_storage))
-    options.merge!(send("conversion_options_destination_provider_#{destination_ems.emstype}", destination_cluster, destination_storage))
+    results.merge!(send("conversion_options_source_provider_#{source_ems.emstype}_#{source_transport_method}", source_storage))
+    results.merge!(send("conversion_options_destination_provider_#{destination_ems.emstype}", destination_cluster, destination_storage))
+  end
 
+  def update_options(opts)
+    save if changed?
+    with_lock do
+      # Automate is updating this options hash (various keys) as well, using with_lock.
+      options.merge!(opts)
+      update_attributes(:options => options)
+    end
     options
   end
 
   def run_conversion
     start_timestamp = Time.now.utc.strftime('%Y-%m-%d %H:%M:%S')
-    options[:virtv2v_wrapper] = conversion_host.run_conversion(conversion_options)
-    options[:virtv2v_started_on] = start_timestamp
-    options[:virtv2v_status] = 'active'
+    updates = {}
+    updates[:virtv2v_wrapper] = conversion_host.run_conversion(conversion_options)
+    updates[:virtv2v_started_on] = start_timestamp
+    updates[:virtv2v_status] = 'active'
+    _log.info("InfraConversionJob run_conversion to update_options: #{updates}")
+    update_options(updates)
   end
 
   def get_conversion_state
+    updates = {}
     virtv2v_state = conversion_host.get_conversion_state(options[:virtv2v_wrapper]['state_file'])
     updated_disks = virtv2v_disks
+    updates[:virtv2v_message] = virtv2v_state['last_message']['message'] if virtv2v_state['last_message'].present?
     if virtv2v_state['finished'].nil?
       updated_disks.each do |disk|
         matching_disks = virtv2v_state['disks'].select { |d| d['path'] == disk[:path] }
         raise "No disk matches '#{disk[:path]}'. Aborting." if matching_disks.length.zero?
-        raise "More than one disk matches '#{disk[:path]}'. Aborting." if matching_disks.length > 1 
+        raise "More than one disk matches '#{disk[:path]}'. Aborting." if matching_disks.length > 1
         disk[:percent] = matching_disks.first['progress']
       end
     else
-      options[:virtv2v_finished_on] = Time.now.utc.strftime('%Y-%m-%d %H:%M:%S')
+      updates[:virtv2v_finished_on] = Time.now.utc.strftime('%Y-%m-%d %H:%M:%S')
       if virtv2v_state['failed']
-        options[:virtv2v_status] = 'failed'
+        updates[:virtv2v_status] = 'failed'
         raise "Disks transformation failed."
       else
-        options[:virtv2v_status] = 'succeeded'
+        updates[:virtv2v_status] = 'succeeded'
         updated_disks.each { |d| d[:percent] = 100 }
       end
     end
-    options[:virtv2v_disks] = updated_disks
-  end 
+    updates[:virtv2v_disks] = updated_disks
+  ensure
+    _log.info("InfraConversionJob get_conversion_state to update_options: #{updates}")
+    update_options(updates)
+  end
 
   def kill_virtv2v(signal = 'TERM')
+    return false if options[:virtv2v_started_on].blank? || options[:virtv2v_finished_on].present? || options[:virtv2v_wrapper].blank?
     return false unless options[:virtv2v_wrapper]['pid']
     conversion_host.kill_process(options[:virtv2v_wrapper]['pid'], signal)
   end
@@ -246,6 +256,34 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
     )
   end
 
+  def calculate_virtv2v_disks
+    source.hardware.disks.select { |d| d.device_type == 'disk' }.collect do |disk|
+      source_storage = disk.storage
+      destination_storage = transformation_destination(disk.storage)
+      raise "[#{source.name}] Disk #{disk.device_name} [#{source_storage.name}] has no mapping." if destination_storage.nil?
+      {
+        :path    => disk.filename,
+        :size    => disk.size,
+        :percent => 0,
+        :weight  => disk.size.to_f / source.allocated_disk_storage.to_f * 100
+      }
+    end
+  end
+
+  def calculate_network_mappings
+    source.hardware.nics.select { |n| n.device_type == 'ethernet' }.collect do |nic|
+      source_network = nic.lan
+      destination_network = transformation_destination(source_network)
+      raise "[#{source.name}] NIC #{nic.device_name} [#{source_network.name}] has no mapping." if destination_network.nil?
+      {
+        :source      => source_network.name,
+        :destination => destination_network_ref(destination_network),
+        :mac_address => nic.address,
+        :ip_address  => nic.network.try(:ipaddress)
+      }.compact
+    end
+  end
+
   def conversion_options_source_provider_vmwarews_vddk(_storage)
     {
       :vm_name            => source.name,
@@ -264,7 +302,12 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
 
   def conversion_options_source_provider_vmwarews_ssh(storage)
     {
-      :vm_name          => URI::Generic.build(:scheme => 'ssh', :userinfo => 'root', :host => source.host.ipaddress, :path => "/vmfs/volumes").to_s + "/#{storage.name}/#{source.location}",
+      :vm_name          => URI::Generic.build(
+        :scheme   => 'ssh',
+        :userinfo => 'root',
+        :host     => source.host.ipaddress,
+        :path     => "/vmfs/volumes/#{Addressable::URI.escape(storage.name)}/#{Addressable::URI.escape(source.location)}"
+      ).to_s,
       :transport_method => 'ssh'
     }
   end
@@ -283,22 +326,27 @@ class ServiceTemplateTransformationPlanTask < ServiceTemplateProvisionTask
   def conversion_options_destination_provider_openstack(cluster, storage)
     {
       :osp_environment            => {
-        :os_no_cache         => true,
-        :os_auth_url         => URI::Generic.build(
+        :os_auth_url             => URI::Generic.build(
           :scheme => destination_ems.security_protocol == 'non-ssl' ? 'http' : 'https',
           :host   => destination_ems.hostname,
           :port   => destination_ems.port,
-          :path   => destination_ems.api_version
-        ),
-        :os_user_domain_name => destination_ems.uid_ems,
-        :os_username         => destination_ems.authentication_userid,
-        :os_password         => destination_ems.authentication_password,
-        :os_project_name     => cluster.name
+          :path   => '/' + destination_ems.api_version
+        ).to_s,
+        :os_identity_api_version => '3',
+        :os_user_domain_name     => destination_ems.uid_ems,
+        :os_username             => destination_ems.authentication_userid,
+        :os_password             => destination_ems.authentication_password,
+        :os_project_name         => conversion_host.resource.cloud_tenant.name
       },
+      :osp_server_id              => conversion_host.ems_ref,
       :osp_destination_project_id => cluster.ems_ref,
       :osp_volume_type_id         => storage.ems_ref,
       :osp_flavor_id              => destination_flavor.ems_ref,
       :osp_security_groups_ids    => [destination_security_group.ems_ref]
     }
+  end
+
+  def valid_states
+    super << 'migrate'
   end
 end

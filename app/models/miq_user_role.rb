@@ -13,7 +13,12 @@ class MiqUserRole < ApplicationRecord
 
   default_value_for :read_only, false
 
-  before_destroy { |r| raise _("Read only roles cannot be deleted.") if r.read_only }
+  before_destroy do |r|
+    if r.read_only
+      errors.add(:base, _("Read only roles cannot be deleted."))
+      throw :abort
+    end
+  end
 
   FIXTURE_PATH = File.join(FIXTURE_DIR, table_name)
   FIXTURE_YAML = "#{FIXTURE_PATH}.yml"
@@ -110,6 +115,10 @@ class MiqUserRole < ApplicationRecord
 
   def tenant_admin_user?
     allows?(:identifier => MiqProductFeature::TENANT_ADMIN_FEATURE)
+  end
+
+  def only_my_user_tasks?
+    !allows?(:identifier => MiqProductFeature::ALL_TASKS_FEATURE) && allows?(:identifier => MiqProductFeature::MY_TASKS_FEATURE)
   end
 
   def report_admin_user?

@@ -43,7 +43,9 @@ class ServiceTemplate < ApplicationRecord
   include ArchivedMixin
   include CiFeatureMixin
   include_concern 'Filter'
+  include_concern 'Copy'
 
+  validates :name, :presence => true
   belongs_to :tenant
   # # These relationships are used to specify children spawned from a parent service
   # has_many   :child_services, :class_name => "ServiceTemplate", :foreign_key => :service_template_id
@@ -54,9 +56,13 @@ class ServiceTemplate < ApplicationRecord
   has_many   :service_templates, :through => :service_resources, :source => :resource, :source_type => 'ServiceTemplate'
   has_many   :services
 
+  has_many :service_template_tenants, :dependent => :destroy
+  has_many :additional_tenants, :through => :service_template_tenants, :source => :tenant, :dependent => :destroy
+
   has_one :picture, :dependent => :destroy, :as => :resource, :autosave => true
 
   belongs_to :service_template_catalog
+  belongs_to :zone
 
   has_many   :dialogs, -> { distinct }, :through => :resource_actions
   has_many   :miq_schedules, :as => :resource, :dependent => :destroy
@@ -81,6 +87,10 @@ class ServiceTemplate < ApplicationRecord
   scope :with_existent_service_template_catalog_id, ->         { where.not(:service_template_catalog_id => nil) }
   scope :displayed,                                 ->         { where(:display => true) }
   scope :public_service_templates,                  ->         { where(:internal => [false, nil]) }
+
+  def self.with_additional_tenants
+    includes(:service_template_tenants => :tenant)
+  end
 
   def self.catalog_item_types
     ci_types = Set.new(Rbac.filtered(ExtManagementSystem.all).flat_map(&:supported_catalog_types))
@@ -167,6 +177,10 @@ class ServiceTemplate < ApplicationRecord
     archive!
   end
 
+  def retireable?
+    false
+  end
+
   def request_class
     ServiceTemplateProvisionRequest
   end
@@ -195,7 +209,7 @@ class ServiceTemplate < ApplicationRecord
 
     nh['initiator'] = service_task.options[:initiator] if service_task.options[:initiator]
 
-    Service.create(nh) do |svc|
+    service = Service.create!(nh) do |svc|
       svc.service_template = self
       set_ownership(svc, service_task.get_user)
 
@@ -204,7 +218,9 @@ class ServiceTemplate < ApplicationRecord
         %w(id created_at updated_at service_template_id).each { |key| nh.delete(key) }
         svc.add_resource(sr.resource, nh) unless sr.resource.nil?
       end
+    end
 
+    service.tap do |svc|
       if parent_svc
         service_resource = ServiceResource.find_by(:id => service_task.options[:service_resource_id])
         parent_svc.add_resource!(svc, service_resource)
@@ -372,7 +388,7 @@ class ServiceTemplate < ApplicationRecord
   end
 
   def self.create_from_options(options)
-    create(options.except(:config_info).merge(:options => { :config_info => options[:config_info] }))
+    create!(options.except(:config_info).merge(:options => { :config_info => options[:config_info] }))
   end
   private_class_method :create_from_options
 
@@ -381,6 +397,16 @@ class ServiceTemplate < ApplicationRecord
     result = order(user, options, request_options)
     raise result[:errors].join(", ") if result[:errors].any?
     result[:request]
+  end
+
+  def picture=(value)
+    if value
+      if value.kind_of?(Hash)
+        super(create_picture(value))
+      else
+        super
+      end
+    end
   end
 
   def queue_order(user_id, options, request_options)
@@ -436,6 +462,12 @@ class ServiceTemplate < ApplicationRecord
 
   def self.display_name(number = 1)
     n_('Service Catalog Item', 'Service Catalog Items', number)
+  end
+
+  def my_zone
+    # Catalog items can specify a zone to run in.
+    # Catalog bundle are used for grouping catalog items and are therefore treated as zone-agnostic.
+    zone&.name if atomic?
   end
 
   private

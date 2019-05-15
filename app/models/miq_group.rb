@@ -224,6 +224,14 @@ class MiqGroup < ApplicationRecord
     end
   end
 
+  def regional_groups
+    self.class.regional_groups(self)
+  end
+
+  def self.regional_groups(group)
+    where(arel_table.grouping(Arel::Nodes::NamedFunction.new("LOWER", [arel_attribute(:description)]).eq(group.description.downcase)))
+  end
+
   def self.create_tenant_group(tenant)
     tenant_full_name = (tenant.ancestors.map(&:name) + [tenant.name]).join("/")
 
@@ -289,10 +297,11 @@ class MiqGroup < ApplicationRecord
   end
 
   def ensure_can_be_destroyed
-    raise _("The login group cannot be deleted") if current_user_group?
-    raise _("The group has users assigned that do not belong to any other group") if single_group_users?
-    raise _("A tenant default group can not be deleted") if tenant_group? && referenced_by_tenant?
-    raise _("A read only group cannot be deleted.") if system_group?
+    errors.add(:base, _("The login group cannot be deleted")) if current_user_group?
+    errors.add(:base, _("The group has users assigned that do not belong to any other group")) if single_group_users?
+    errors.add(:base, _("A tenant default group can not be deleted")) if tenant_group? && referenced_by_tenant?
+    errors.add(:base, _("A read only group cannot be deleted.")) if system_group?
+    throw :abort unless errors[:base].empty?
   end
 
   def reset_current_group_for_users

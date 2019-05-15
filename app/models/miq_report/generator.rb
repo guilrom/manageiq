@@ -81,16 +81,11 @@ module MiqReport::Generator
   end
 
   def get_include_for_find
-    (include_as_hash.presence || invent_includes).deep_merge(include_for_find || {}).presence
+    include_as_hash(include.presence || invent_report_includes).deep_merge(include_for_find || {}).presence
   end
 
   def invent_includes
-    return {} unless col_order
-    col_order.each_with_object({}) do |col, ret|
-      next unless col.include?(".")
-      *rels, _col = col.split(".")
-      rels.inject(ret) { |h, rel| h[rel.to_sym] ||= {} } unless col =~ /managed\./
-    end
+    include_as_hash(invent_report_includes)
   end
 
   # would like this format to go away
@@ -324,6 +319,7 @@ module MiqReport::Generator
 
     ## add in virtual attributes that can be calculated from sql
     rbac_opts[:extra_cols] = va_sql_cols unless va_sql_cols.blank?
+    rbac_opts[:use_sql_view] = true if db_options && db_options[:use_sql_view]
 
     results, attrs = Rbac.search(rbac_opts)
     results = Metric::Helper.remove_duplicate_timestamps(results)
@@ -740,7 +736,7 @@ module MiqReport::Generator
       if association == "categories" || association == "managed"
         association_objects = []
         assochash = {}
-        @descriptions_by_tag_id ||= Classification.where("parent_id != 0").each_with_object({}) do |c, h|
+        @descriptions_by_tag_id ||= Classification.is_entry.each_with_object({}) do |c, h|
           h[c.tag_id] = c.description
         end
 

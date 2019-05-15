@@ -1,6 +1,6 @@
 describe Authenticator::Ldap do
   subject { Authenticator::Ldap.new(config) }
-  let!(:alice) { FactoryGirl.create(:user, :userid => 'alice') }
+  let!(:alice) { FactoryBot.create(:user, :userid => 'alice') }
   let(:config) do
     {
       :ldap_role => false,
@@ -57,8 +57,8 @@ describe Authenticator::Ldap do
   end
 
   before do
-    FactoryGirl.create(:miq_group, :description => 'wibble')
-    FactoryGirl.build_stubbed(:miq_group, :description => 'wobble')
+    FactoryBot.create(:miq_group, :description => 'wibble')
+    FactoryBot.build_stubbed(:miq_group, :description => 'wobble')
   end
 
   let(:user_data) do
@@ -276,6 +276,21 @@ describe Authenticator::Ldap do
           task_id = authenticate
           task = MiqTask.find(task_id)
           expect(User.find_by_userid(task.userid)).to eq(alice)
+        end
+
+        context "new user creation" do
+          let(:username) { 'bob' }
+          it "logs the success" do
+            authenticate
+            expect(MiqQueue.count).to eq 1
+            expect(MiqQueue.first.args.last(2)).to eq(
+              ["user_created",
+                {
+                  :event_details => "User creation successful for User: Bob Builderson with ID: bob"
+                }
+              ]
+            )
+          end
         end
 
         context "with no corresponding LDAP user" do

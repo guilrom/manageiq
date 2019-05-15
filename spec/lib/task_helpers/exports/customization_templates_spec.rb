@@ -2,7 +2,7 @@ describe TaskHelpers::Exports::CustomizationTemplates do
   let(:template_name) { "Basic root pass template" }
   let(:template_type) { "CustomizationTemplateCloudInit" }
   let(:template_desc) { "This template takes use of rootpassword defined in the UI" }
-  let(:template_script) { "#cloud-config\nchpasswd:\n  list: |\n    root:<%= MiqPassword.decrypt(evm[:root_password]) %>\n  expire: False" }
+  let(:template_script) { "#cloud-config\nchpasswd:\n  list: |\n    root:<%= ManageIQ::Password.decrypt(evm[:root_password]) %>\n  expire: False" }
   let(:image_type_name1) { "CentOS-6" }
   let(:image_type_name2) { "RHEL-7" }
   let(:provision_type2) { "vm" }
@@ -42,21 +42,21 @@ describe TaskHelpers::Exports::CustomizationTemplates do
   end
 
   before do
-    pit1 = FactoryGirl.create(:pxe_image_type,
+    pit1 = FactoryBot.create(:pxe_image_type,
                               :name => image_type_name1)
 
-    pit2 = FactoryGirl.create(:pxe_image_type,
+    pit2 = FactoryBot.create(:pxe_image_type,
                               :name           => image_type_name2,
                               :provision_type => provision_type2)
 
-    FactoryGirl.create(:customization_template,
+    FactoryBot.create(:customization_template,
                        :name           => template_name,
                        :type           => template_type,
                        :description    => template_desc,
                        :script         => template_script,
                        :pxe_image_type => pit1)
 
-    FactoryGirl.create(:customization_template,
+    FactoryBot.create(:customization_template,
                        :name           => template_name,
                        :type           => template_type,
                        :description    => template_desc,

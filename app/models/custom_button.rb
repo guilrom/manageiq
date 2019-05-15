@@ -13,7 +13,8 @@ class CustomButton < ApplicationRecord
 
   validates :applies_to_class, :presence => true
   validates :name, :description, :uniqueness => {:scope => [:applies_to_class, :applies_to_id]}, :presence => true
-  validates :guid, :uniqueness => true, :presence => true
+
+  virtual_attribute :uri_attributes, :string
 
   include UuidMixin
   acts_as_miq_set_member
@@ -100,7 +101,8 @@ class CustomButton < ApplicationRecord
     MiqQueue.put(queue_opts(target, args))
   end
 
-  def publish_event(source, target, args)
+  def publish_event(source, target, args = nil)
+    args ||= resource_action.automate_queue_hash(target, {}, User.current_user)
     Array(target).each { |t| create_event(source, t, args) }
   end
 

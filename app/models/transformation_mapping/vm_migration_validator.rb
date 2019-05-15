@@ -10,9 +10,10 @@ class TransformationMapping::VmMigrationValidator
   VM_NOT_EXIST = "not_exist".freeze
   VM_VALID = "ok".freeze
 
-  def initialize(mapping, vm_list = nil)
+  def initialize(mapping, vm_list = nil, service_template_id = nil)
     @mapping = mapping
     @vm_list = vm_list
+    @service_template_id = service_template_id.try(:to_i)
   end
 
   def validate
@@ -36,7 +37,7 @@ class TransformationMapping::VmMigrationValidator
     conflict_list = []
 
     vm_names = @vm_list.collect { |row| row['name'] }
-    vm_objects = Vm.where(:name => vm_names, :ems_cluster => mapped_clusters).includes(:lans, :storages, :host, :ext_management_system)
+    vm_objects = Vm.where(:name => vm_names).includes(:ems_cluster, :lans, :storages, :host, :ext_management_system)
 
     @vm_list.each do |row|
       vm_name = row['name']
@@ -46,7 +47,13 @@ class TransformationMapping::VmMigrationValidator
         next
       end
 
-      vms = vm_objects.select { |vm| vm.name == vm_name }
+      if vm_objects.select { |vm| vm.name == vm_name && !vm.active? }.any?
+        invalid_list << VmMigrateStruct.new(vm_name, nil, VM_INVALID, VM_INACTIVE)
+        next
+      end
+
+      vms = vm_objects.select { |vm| mapped_clusters.include?(vm.ems_cluster) }
+      vms = vms.select { |vm| vm.name == vm_name }
       vms = vms.select { |vm| vm.uid_ems == row['uid_ems'] } if row['uid_ems'].present?
       vms = vms.select { |vm| vm.host.name == row['host'] } if row['host'].present?
       vms = vms.select { |vm| vm.ext_management_system.name == row['provider'] } if row['provider'].present?
@@ -88,8 +95,6 @@ class TransformationMapping::VmMigrationValidator
   end
 
   def vm_migration_status(vm)
-    return VM_INACTIVE unless vm.active?
-
     vm_as_resources = ServiceResource.joins(:service_template).where(:resource => vm, :service_templates => {:type => 'ServiceTemplateTransformationPlan'})
 
     # VM has not been migrated before
@@ -98,7 +103,7 @@ class TransformationMapping::VmMigrationValidator
     return VM_MIGRATED unless vm_as_resources.where(:status => ServiceResource::STATUS_COMPLETED).empty?
 
     # VM failed in previous migration
-    vm_as_resources.all? { |rsc| rsc.status == ServiceResource::STATUS_FAILED } ? VM_VALID : VM_IN_OTHER_PLAN
+    vm_as_resources.all? { |rsc| rsc.status == ServiceResource::STATUS_FAILED || rsc.service_template_id == @service_template_id  } ? VM_VALID : VM_IN_OTHER_PLAN
   end
 
   def no_mapping_list(invalid_list, data_type, new_records)

@@ -148,11 +148,11 @@ class MiqRequest < ApplicationRecord
   end
 
   def self.user_owned(user)
-    where(:requester_id => user.id)
+    where(:requester_id => user.regional_users.select(:id))
   end
 
   def self.group_owned(miq_group)
-    where(:requester_id => miq_group.user_ids)
+    where(:requester_id => miq_group.regional_groups.joins(:users).select("users.id"))
   end
 
   # Supports old-style requests where specific request was a seperate table connected as a resource
@@ -372,12 +372,8 @@ class MiqRequest < ApplicationRecord
     task_count = miq_request_tasks.count
     miq_request_tasks.each do |p|
       states[p.state] += 1
-      states[:total] += 1
       status[p.status] += 1
     end
-    total = states.delete(:total).to_i
-    unknown_state = task_count - total
-    states["unknown"] = unknown_state unless unknown_state.zero?
     msg = states.sort.collect { |s| "#{s[0].capitalize} = #{s[1]}" }.join("; ")
 
     req_state = (states.length == 1) ? states.keys.first : "active"

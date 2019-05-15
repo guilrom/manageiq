@@ -1,9 +1,9 @@
 describe CustomButton do
   describe '.with_array_order' do
     context 'order by array' do
-      let!(:custom_button_1) { FactoryGirl.create(:custom_button, :name => 'AAA', :applies_to_id => 100, :applies_to_class => Vm) }
-      let!(:custom_button_2) { FactoryGirl.create(:custom_button, :name => 'BBB', :applies_to_id => 200, :applies_to_class => Vm) }
-      let!(:custom_button_3) { FactoryGirl.create(:custom_button, :name => 'CCC', :applies_to_id => 300, :applies_to_class => Vm) }
+      let!(:custom_button_1) { FactoryBot.create(:custom_button, :name => 'AAA', :applies_to_id => 100, :applies_to_class => Vm) }
+      let!(:custom_button_2) { FactoryBot.create(:custom_button, :name => 'BBB', :applies_to_id => 200, :applies_to_class => Vm) }
+      let!(:custom_button_3) { FactoryBot.create(:custom_button, :name => 'CCC', :applies_to_id => 300, :applies_to_class => Vm) }
 
       context 'by bigint column' do
         it 'orders by memory_shares column' do
@@ -22,9 +22,9 @@ describe CustomButton do
   context "with no buttons" do
     describe '#evaluate_enablement_expression_for' do
       let(:miq_expression) { MiqExpression.new('EQUAL' => {'field' => 'Vm-name', 'value' => 'vm_1'}) }
-      let(:vm)             { FactoryGirl.create(:vm_vmware, :name => 'vm_1') }
+      let(:vm)             { FactoryBot.create(:vm_vmware, :name => 'vm_1') }
       let(:custom_button) do
-        FactoryGirl.create(:custom_button, :applies_to => vm.class, :name => "foo", :description => "foo foo")
+        FactoryBot.create(:custom_button, :applies_to => vm.class, :name => "foo", :description => "foo foo")
       end
 
       it 'evaluates enablement expression when expression is not set' do
@@ -64,7 +64,7 @@ describe CustomButton do
         @ae_uri        = MiqAeEngine.create_automation_object(@ae_name, @ae_attributes)
         @userid        = "guest"
         uri_path, uri_attributes, uri_message = CustomButton.parse_uri(@ae_uri)
-        @button = FactoryGirl.create(:custom_button,
+        @button = FactoryBot.create(:custom_button,
           :name             => @button_name,
           :description      => @button_text,
           :applies_to_class => @button_class,
@@ -91,8 +91,9 @@ describe CustomButton do
 
       context "when invoking for a particular VM" do
         before do
-          @vm    = FactoryGirl.create(:vm_vmware)
-          @user2 = FactoryGirl.create(:user_with_group)
+          MiqRegion.seed
+          @vm    = FactoryBot.create(:vm_vmware)
+          @user2 = FactoryBot.create(:user_with_group)
           EvmSpecHelper.local_miq_server(:is_master => true, :zone => Zone.seed)
         end
 
@@ -121,19 +122,19 @@ describe CustomButton do
   end
 
   it ".buttons_for" do
-    vm         = FactoryGirl.create(:vm_vmware)
-    vm_other   = FactoryGirl.create(:vm_vmware)
-    button1all = FactoryGirl.create(:custom_button,
+    vm         = FactoryBot.create(:vm_vmware)
+    vm_other   = FactoryBot.create(:vm_vmware)
+    button1all = FactoryBot.create(:custom_button,
                                     :applies_to  => vm.class,
                                     :name        => "foo",
                                     :description => "foo foo")
 
-    button1vm  = FactoryGirl.create(:custom_button,
+    button1vm  = FactoryBot.create(:custom_button,
                                     :applies_to  => vm,
                                     :name        => "bar",
                                     :description => "bar bar")
 
-    button2vm  = FactoryGirl.create(:custom_button,
+    button2vm  = FactoryBot.create(:custom_button,
                                     :applies_to  => vm,
                                     :name        => "foo",
                                     :description => "foo foo")
@@ -145,8 +146,8 @@ describe CustomButton do
   end
 
   it "#save" do
-    ra     = FactoryGirl.create(:resource_action, :ae_namespace => 'SYSTEM', :ae_class => 'PROCESS', :ae_message => 'create')
-    button = FactoryGirl.create(:custom_button, :name => "My test button", :applies_to => Vm, :resource_action => ra)
+    ra     = FactoryBot.create(:resource_action, :ae_namespace => 'SYSTEM', :ae_class => 'PROCESS', :ae_message => 'create')
+    button = FactoryBot.create(:custom_button, :name => "My test button", :applies_to => Vm, :resource_action => ra)
     button.save
 
     ra.ae_message = "new message"
@@ -157,12 +158,12 @@ describe CustomButton do
 
   context "validates uniqueness" do
     before do
-      @vm = FactoryGirl.create(:vm_vmware)
+      @vm = FactoryBot.create(:vm_vmware)
       @default_name = @default_description = "boom"
     end
 
     it "applies_to_class" do
-      button_for_all_vms = FactoryGirl.create(:custom_button,
+      button_for_all_vms = FactoryBot.create(:custom_button,
                                               :applies_to_class => 'Vm',
                                               :name             => @default_name,
                                               :description      => @default_description)
@@ -200,9 +201,9 @@ describe CustomButton do
     end
 
     it "applies_to_instance" do
-      vm_other = FactoryGirl.create(:vm_vmware)
+      vm_other = FactoryBot.create(:vm_vmware)
 
-      button_for_single_vm = FactoryGirl.create(:custom_button,
+      button_for_single_vm = FactoryBot.create(:custom_button,
                                                 :applies_to  => @vm,
                                                 :name        => @default_name,
                                                 :description => @default_description)
@@ -291,7 +292,7 @@ describe CustomButton do
 
       it "returns the button as a serializable hash with the resource action serialized hash" do
         expect(test_button.expanded_serializable_hash).to eq(
-          expected_hash.merge(:resource_action => "resource_action_hash")
+          expected_hash.merge("guid" => test_button.guid, :resource_action => "resource_action_hash")
         )
       end
     end
@@ -300,27 +301,28 @@ describe CustomButton do
       let(:resource_action) { nil }
 
       it "returns the button as a serializable hash" do
-        expect(test_button.expanded_serializable_hash).to eq(expected_hash)
+        expect(test_button.expanded_serializable_hash).to eq(expected_hash.merge("guid" => test_button.guid))
       end
     end
   end
 
   it "#copy" do
-    service_template1 = FactoryGirl.create(:service_template)
-    service_template2 = FactoryGirl.create(:service_template)
-    button = FactoryGirl.create(:custom_button, :applies_to => service_template1)
+    service_template1 = FactoryBot.create(:service_template)
+    service_template2 = FactoryBot.create(:service_template)
+    button = FactoryBot.create(:custom_button, :applies_to => service_template1)
     expect { button.copy(:applies_to => service_template2) }.to change { CustomButton.count }.by(1)
   end
 
   describe "publish custom button event" do
-    let(:vm)              { FactoryGirl.create(:vm_vmware) }
-    let(:vm2)             { FactoryGirl.create(:vm_vmware) }
-    let(:vm3)             { FactoryGirl.create(:vm_vmware) }
-    let(:user)            { FactoryGirl.create(:user_with_group) }
-    let(:resource_action) { FactoryGirl.create(:resource_action, :ae_namespace => 'SYSTEM', :ae_class => 'PROCESS', :ae_instance => 'Request') }
-    let(:custom_button)   { FactoryGirl.create(:custom_button, :applies_to => vm.class, :resource_action => resource_action) }
+    let(:vm)              { FactoryBot.create(:vm_vmware) }
+    let(:vm2)             { FactoryBot.create(:vm_vmware) }
+    let(:vm3)             { FactoryBot.create(:vm_vmware) }
+    let(:user)            { FactoryBot.create(:user_with_group) }
+    let(:resource_action) { FactoryBot.create(:resource_action, :ae_namespace => 'SYSTEM', :ae_class => 'PROCESS', :ae_instance => 'Request') }
+    let(:custom_button)   { FactoryBot.create(:custom_button, :applies_to => vm.class, :resource_action => resource_action) }
 
     before do
+      MiqRegion.seed
       EvmSpecHelper.local_miq_server(:is_master => true, :zone => Zone.seed)
     end
 
@@ -381,6 +383,24 @@ describe CustomButton do
               :full_data   => a_hash_including(:automate_entry_point => "/SYSTEM/PROCESS/Request")
             )
           end
+        end
+      end
+    end
+
+    describe "publish event" do
+      context "with blank args" do
+        it "resource action calls automate_queue_hash" do
+          expect(resource_action).to receive(:automate_queue_hash).with(vm, {}, user).and_return(:username => "foo")
+
+          User.with_user(user) { custom_button.publish_event('UI', vm) }
+        end
+      end
+
+      context "with args" do
+        it "resource action doesn't call automate_queue_hash" do
+          expect(resource_action).not_to receive(:automate_queue_hash)
+
+          User.with_user(user) { custom_button.publish_event('UI', vm, :username => "foo") }
         end
       end
     end

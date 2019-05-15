@@ -3,7 +3,7 @@ class DialogFieldTextBox < DialogField
 
   def initialize_value_context
     if @value.blank?
-      @value = dynamic && load_values_on_init? ? values_from_automate : default_value
+      @value = dynamic && load_values_on_init ? values_from_automate : default_value
     end
   end
 
@@ -26,12 +26,12 @@ class DialogFieldTextBox < DialogField
 
   def value_from_dialog_fields(dialog_values)
     value_from_dialog_field = dialog_values[automate_key_name]
-    self.protected? ? MiqPassword.decrypt(value_from_dialog_field) : value_from_dialog_field
+    self.protected? ? ManageIQ::Password.decrypt(value_from_dialog_field) : value_from_dialog_field
   end
 
   def automate_output_value
     return nil if @value.nil?
-    return MiqPassword.try_encrypt(@value) if self.protected?
+    return ManageIQ::Password.try_encrypt(@value) if self.protected?
     convert_value_to_type
   end
 
@@ -83,10 +83,5 @@ class DialogFieldTextBox < DialogField
 
   def value_supposed_to_be_int?
     data_type == "integer" && @value.to_s !~ /^[0-9]+$/
-  end
-
-  def load_values_on_init?
-    return true unless show_refresh_button
-    load_values_on_init
   end
 end

@@ -34,7 +34,7 @@ class User < ApplicationRecord
 
   delegate   :miq_user_role, :current_tenant, :get_filters, :has_filters?, :get_managed_filters, :get_belongsto_filters,
              :to => :current_group, :allow_nil => true
-  delegate   :super_admin_user?, :request_admin_user?, :self_service?, :limited_self_service?, :report_admin_user?,
+  delegate   :super_admin_user?, :request_admin_user?, :self_service?, :limited_self_service?, :report_admin_user?, :only_my_user_tasks?,
              :to => :miq_user_role, :allow_nil => true
 
   validates_presence_of   :name, :userid
@@ -241,6 +241,14 @@ class User < ApplicationRecord
     else
       Vm.all
     end
+  end
+
+  def regional_users
+    self.class.regional_users(self)
+  end
+
+  def self.regional_users(user)
+    where(arel_table.grouping(Arel::Nodes::NamedFunction.new("LOWER", [arel_attribute(:userid)]).eq(user.userid.downcase)))
   end
 
   def self.super_admin

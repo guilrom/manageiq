@@ -1,9 +1,10 @@
 describe AutomationRequest do
-  let(:admin) { FactoryGirl.create(:user, :role => "admin") }
+  let(:admin) { FactoryBot.create(:user, :role => "admin") }
   before do
+    MiqRegion.seed
     allow(MiqServer).to receive(:my_zone).and_return(Zone.seed.name)
-    @zone        = FactoryGirl.create(:zone, :name => "fred")
-    @approver    = FactoryGirl.create(:user_miq_request_approver)
+    @zone        = FactoryBot.create(:zone, :name => "fred")
+    @approver    = FactoryBot.create(:user_miq_request_approver)
 
     @version     = 1
     @ae_instance = "IIII"
@@ -48,6 +49,17 @@ describe AutomationRequest do
       expect(ar.options[:attrs][:var2]).to eq(@ae_var2)
       expect(ar.options[:attrs][:var3]).to eq(@ae_var3)
       expect(ar.options[:attrs][:userid]).to eq(admin.userid)
+      expect(ar.options[:schedule_type]).to eq("immediately")
+      expect(ar.options[:schedule_time]).to eq(nil)
+    end
+
+    it "creates request with schedule" do
+      scheduling_time = (Time.now.utc + 2.days).change(:usec => 0)
+      @parameters['schedule_time'] = scheduling_time
+      ar = AutomationRequest.create_from_ws(@version, admin, @uri_parts, @parameters, {})
+
+      expect(ar.options[:schedule_type]).to eq("schedule")
+      expect(ar.options[:schedule_time]).to eq(scheduling_time)
     end
 
     it 'doesnt downcase and stringify objects in the parameters hash' do
@@ -107,7 +119,7 @@ describe AutomationRequest do
   end
 
   context ".create_from_scheduled_task" do
-    let(:admin) { FactoryGirl.create(:user_miq_request_approver) }
+    let(:admin) { FactoryBot.create(:user_miq_request_approver) }
 
     it "with prescheduled task" do
       ar = described_class.create_from_scheduled_task(admin, @uri_parts, @parameters)
