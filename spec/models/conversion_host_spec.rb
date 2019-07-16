@@ -165,6 +165,10 @@ describe ConversionHost do
     end
 
     context "#ansible_playbook" do
+      let(:auth_v2v) { FactoryBot.create(:authentication_v2v, :resource => conversion_host) }
+      let(:package_url) { 'http://file.example.com/vddk-stable.tar.gz' }
+      let(:enable_playbook) { '/usr/share/v2v-conversion-host-ansible/playbooks/conversion_host_enable.yml' }
+
       it "check_conversion_host_role calls ansible_playbook with extra_vars" do
         check_playbook = '/usr/share/v2v-conversion-host-ansible/playbooks/conversion_host_check.yml'
         check_extra_vars = {
@@ -193,12 +197,11 @@ describe ConversionHost do
       end
 
       it "enable_conversion_host_role calls ansible_playbook with extra_vars" do
-        enable_playbook = '/usr/share/v2v-conversion-host-ansible/playbooks/conversion_host_enable.yml'
         check_playbook = '/usr/share/v2v-conversion-host-ansible/playbooks/conversion_host_check.yml'
         enable_extra_vars = {
           :v2v_host_type        => 'rhevm',
           :v2v_transport_method => 'vddk',
-          :v2v_vddk_package_url => 'http://file.example.com/vddk-stable.tar.gz'
+          :v2v_vddk_package_url => package_url
         }
         check_extra_vars = {
           :v2v_host_type        => 'rhevm',
@@ -207,6 +210,18 @@ describe ConversionHost do
         expect(conversion_host).to receive(:ansible_playbook).once.ordered.with(enable_playbook, enable_extra_vars, nil)
         expect(conversion_host).to receive(:ansible_playbook).once.ordered.with(check_playbook, check_extra_vars, nil)
         conversion_host.enable_conversion_host_role('http://file.example.com/vddk-stable.tar.gz', nil)
+      end
+
+      it "logs an error message if the ansible_playbook command fails" do
+        command = "ansible_playbook #{enable_playbook}"
+        result = instance_double(AwesomeSpawn::CommandResult, :command_line => command, :failure? => true, :error => "oops")
+
+        allow(conversion_host).to receive(:check_conversion_host_role)
+        allow(conversion_host).to receive(:find_credentials).and_return(auth_v2v)
+        allow(AwesomeSpawn).to receive(:run).and_return(result)
+
+        expect($log).to receive(:error).with("MIQ(ConversionHost#ansible_playbook) #{command} ==> oops")
+        expect { conversion_host.enable_conversion_host_role(package_url, nil) }.to raise_error(RuntimeError)
       end
     end
   end
@@ -267,7 +282,8 @@ describe ConversionHost do
         enable_extra_vars = {
           :v2v_host_type        => 'openstack',
           :v2v_transport_method => 'ssh',
-          :v2v_ssh_private_key  => 'fake ssh private key'
+          :v2v_ssh_private_key  => 'fake ssh private key',
+          :v2v_ca_bundle        => 'fake CA bundle'
         }
         check_extra_vars = {
           :v2v_host_type        => 'openstack',
@@ -275,7 +291,7 @@ describe ConversionHost do
         }
         expect(conversion_host).to receive(:ansible_playbook).once.ordered.with(enable_playbook, enable_extra_vars, nil)
         expect(conversion_host).to receive(:ansible_playbook).once.ordered.with(check_playbook, check_extra_vars, nil)
-        conversion_host.enable_conversion_host_role(nil, 'fake ssh private key')
+        conversion_host.enable_conversion_host_role(nil, 'fake ssh private key', 'fake CA bundle')
       end
     end
 
@@ -351,17 +367,52 @@ describe ConversionHost do
 
   context "authentication associations" do
     let(:vm) { FactoryBot.create(:vm_openstack) }
-    let(:conversion_host_vm) { FactoryBot.create(:conversion_host, :resource => vm) }
-    let(:auth_authkey) { FactoryBot.create(:authentication_ssh_keypair, :resource => conversion_host_vm) }
+    let(:ems) { FactoryBot.create(:ems_redhat, :zone => FactoryBot.create(:zone), :api_version => '4.2.4') }
+    let(:host) { FactoryBot.create(:host_redhat, :ext_management_system => ems) }
 
-    it "finds associated authentications" do
-      expect(conversion_host_vm.authentications).to contain_exactly(auth_authkey)
+    let(:conversion_host_vm) { FactoryBot.create(:conversion_host, :resource => vm) }
+    let(:conversion_host_host) { FactoryBot.create(:conversion_host, :resource => host) }
+
+    let(:auth_keypair) { FactoryBot.create(:authentication_ssh_keypair, :resource => conversion_host_vm) }
+    let(:auth_v2v) { FactoryBot.create(:authentication_v2v, :resource => conversion_host_host) }
+
+    it "finds associated ssh_keypair authentications" do
+      expect(conversion_host_vm.authentications).to contain_exactly(auth_keypair)
+    end
+
+    it "finds associated v2v authentications" do
+      expect(conversion_host_host.authentications).to contain_exactly(auth_v2v)
     end
 
     it "allows a resource to add an authentication" do
-      auth_authkey2 = FactoryBot.create(:authentication_ssh_keypair)
-      conversion_host_vm.authentications << auth_authkey2
-      expect(conversion_host_vm.authentications).to contain_exactly(auth_authkey, auth_authkey2)
+      auth_keypair2 = FactoryBot.create(:authentication_ssh_keypair)
+      conversion_host_vm.authentications << auth_keypair2
+      expect(conversion_host_vm.authentications).to contain_exactly(auth_keypair, auth_keypair2)
+    end
+  end
+
+  context "find_credentials" do
+    let(:auth_v2v) { FactoryBot.create(:authentication_v2v, :resource => conversion_host_vm) }
+    let(:ems_redhat) { FactoryBot.create(:ems_redhat, :zone => FactoryBot.create(:zone), :api_version => '4.2.4') }
+    let(:ems_openstack) { FactoryBot.create(:ems_openstack, :zone => FactoryBot.create(:zone)) }
+    let(:auth_default) { FactoryBot.create(:authentication) }
+
+    let(:host) { FactoryBot.create(:host_redhat, :ext_management_system => ems_redhat) }
+    let(:vm) { FactoryBot.create(:vm_openstack, :ext_management_system => ems_openstack) }
+
+    let(:conversion_host_vm) { FactoryBot.create(:conversion_host, :resource => vm) }
+    let(:conversion_host_host) { FactoryBot.create(:conversion_host, :resource => host) }
+
+    it "finds the v2v credentials as expected when associated directly with the conversion host" do
+      conversion_host_vm.authentications << auth_v2v
+      expect(conversion_host_vm.send(:find_credentials)).to eq(auth_v2v)
+    end
+
+    it "finds the credentials associated with the resource if credentials cannot be found for the conversion host" do
+      vm.ext_management_system.authentications << auth_default
+      host.authentications << auth_default
+      expect(conversion_host_vm.send(:find_credentials)).to eq(auth_default)
+      expect(conversion_host_host.send(:find_credentials)).to eq(auth_default)
     end
   end
 
@@ -405,6 +456,37 @@ describe ConversionHost do
       conversion_host_vm.authentications << authentication
       allow(Net::SSH).to receive(:start).and_return(true)
       expect(conversion_host_vm.verify_credentials('v2v')).to be_truthy
+    end
+  end
+
+  context "#run_conversion" do
+    let(:vm) { FactoryBot.create(:vm_openstack) }
+    let(:conversion_host) { FactoryBot.create(:conversion_host, :resource => vm) }
+    let(:conversion_options) { {:foo => 1, :bar => 'hello', :password => 'xxx', :ssh_key => 'xyz' } }
+    let(:filtered_options) { conversion_options.clone.update(:ssh_key => '__FILTERED__', :password => '__FILTERED__') }
+
+    it "works as expected if the connection is successful and the JSON is valid" do
+      allow(conversion_host).to receive(:connect_ssh).and_return({:alpha => {:beta => 'hello'}}.to_json)
+      expect(conversion_host.run_conversion(conversion_options)).to eql('alpha' => {'beta' => 'hello'})
+    end
+
+    it "works as expected if the connection is successful but the JSON is invalid" do
+      allow(conversion_host).to receive(:connect_ssh).and_return('bogus')
+      expected_message = "Could not parse result data after running virt-v2v-wrapper.py using "\
+        "options: #{filtered_options}. Result was: bogus."
+      expect { conversion_host.run_conversion(conversion_options) }.to raise_error(expected_message)
+    end
+
+    it "works as expected if the connection is unsuccessful" do
+      allow(conversion_host).to receive(:connect_ssh).and_raise(MiqException::MiqInvalidCredentialsError)
+      expected_message = "Failed to connect and run conversion using options #{filtered_options}"
+      expect { conversion_host.run_conversion(conversion_options) }.to raise_error(/#{expected_message}/)
+    end
+
+    it "works as expected if an unknown error occurs" do
+      allow(conversion_host).to receive(:connect_ssh).and_raise(StandardError)
+      expected_message = "Starting conversion failed on '#{vm.name}'"
+      expect { conversion_host.run_conversion(conversion_options) }.to raise_error(/#{expected_message}/)
     end
   end
 

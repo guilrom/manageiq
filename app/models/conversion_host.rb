@@ -52,7 +52,7 @@ class ConversionHost < ApplicationRecord
 
       auth = authentication_type(auth_type) || authentications.first
 
-      ssh_options = { :timeout => 10, :logger => $log, :verbose => :error }
+      ssh_options = { :timeout => 10, :use_agent => false }
 
       case auth
       when AuthUseridPassword
@@ -88,9 +88,12 @@ class ConversionHost < ApplicationRecord
     source_transport_method.present? && verify_credentials && check_concurrent_tasks
   end
 
+  # Note that we force a reload of the active tasks via .count because we don't
+  # want that value cached.
+  #
   def check_concurrent_tasks
     max_tasks = max_concurrent_tasks || Settings.transformation.limits.max_concurrent_tasks_per_host
-    active_tasks.size < max_tasks
+    active_tasks.count < max_tasks
   end
 
   def check_ssh_connection
@@ -110,11 +113,23 @@ class ConversionHost < ApplicationRecord
     resource.ipaddresses.detect { |ip| IPAddr.new(ip).send("#{family}?") }
   end
 
+  # Run the virt-v2v-wrapper.py script on the remote host and return a hash
+  # result from the parsed JSON output.
+  #
+  # Certain sensitive fields are filtered in the error messages to prevent
+  # that information from showing up in the UI or logs.
+  #
   def run_conversion(conversion_options)
+    ignore = %w[password fingerprint key]
+    filtered_options = conversion_options.clone.tap { |h| h.each { |k, _v| h[k] = "__FILTERED__" if ignore.any? { |i| k.to_s.end_with?(i) } } }
     result = connect_ssh { |ssu| ssu.shell_exec('/usr/bin/virt-v2v-wrapper.py', nil, nil, conversion_options.to_json) }
     JSON.parse(result)
-  rescue => e
-    raise "Starting conversion failed on '#{resource.name}' with [#{e.class}: #{e}]"
+  rescue MiqException::MiqInvalidCredentialsError, MiqException::MiqSshUtilHostKeyMismatch => err
+    raise "Failed to connect and run conversion using options #{filtered_options} with [#{err.class}: #{err}]"
+  rescue JSON::ParserError
+    raise "Could not parse result data after running virt-v2v-wrapper.py using options: #{filtered_options}. Result was: #{result}."
+  rescue StandardError => err
+    raise "Starting conversion failed on '#{resource.name}' with [#{err.class}: #{err}]"
   end
 
   def kill_process(pid, signal = 'TERM')
@@ -156,7 +171,7 @@ class ConversionHost < ApplicationRecord
     tag_resource_as('disabled')
   end
 
-  def enable_conversion_host_role(vmware_vddk_package_url = nil, vmware_ssh_private_key = nil, miq_task_id = nil)
+  def enable_conversion_host_role(vmware_vddk_package_url = nil, vmware_ssh_private_key = nil, openstack_tls_ca_certs = nil, miq_task_id = nil)
     raise "vmware_vddk_package_url is mandatory if transformation method is vddk" if vddk_transport_supported && vmware_vddk_package_url.nil?
     raise "vmware_ssh_private_key is mandatory if transformation_method is ssh" if ssh_transport_supported && vmware_ssh_private_key.nil?
     playbook = "/usr/share/v2v-conversion-host-ansible/playbooks/conversion_host_enable.yml"
@@ -165,7 +180,7 @@ class ConversionHost < ApplicationRecord
       :v2v_transport_method => source_transport_method,
       :v2v_vddk_package_url => vmware_vddk_package_url,
       :v2v_ssh_private_key  => vmware_ssh_private_key,
-      :v2v_ca_bundle        => resource.ext_management_system.connection_configurations['default'].certificate_authority
+      :v2v_ca_bundle        => openstack_tls_ca_certs || resource.ext_management_system.connection_configurations['default'].certificate_authority
     }.compact
     ansible_playbook(playbook, extra_vars, miq_task_id)
   ensure
@@ -195,20 +210,23 @@ class ConversionHost < ApplicationRecord
   end
 
   # Find the credentials for the associated resource. By default it will
-  # look for a v2v auth type. If that is not found, it will look for the
-  # authentication associated with the resource using ssh_keypair or default,
-  # in that order, as the authtype.
+  # look for a v2v auth type if no argument is passed in.
   #
-  def find_credentials(msg = nil)
-    authentication = authentication_type('v2v') ||
-      resource.authentication_type('ssh_keypair') ||
-      resource.authentication_type('default')
+  # If one isn't found, then it will look for the authentication associated
+  # with the resource using the 'ssh_keypair' auth type, and finally 'default'.
+  #
+  def find_credentials(auth_type = 'v2v')
+    authentication = authentications.detect { |a| a.authtype == auth_type }
+
+    if authentication.blank?
+      res = resource.respond_to?(:authentication_type) ? resource : resource.ext_management_system
+      authentication = res.authentication_type('ssh_keypair') || res.authentication_type('default')
+    end
 
     unless authentication
-      msg = "Credentials not found for conversion host #{name} or resource #{resource.name}"
-      msg << " #{msg}" if msg
-      _log.error(msg)
-      raise MiqException::Error, msg
+      error_msg = "Credentials not found for conversion host #{name} or resource #{resource.name}"
+      _log.error(error_msg)
+      raise MiqException::Error, error_msg
     end
 
     authentication
@@ -224,32 +242,33 @@ class ConversionHost < ApplicationRecord
     raise e
   end
 
+  # Collect appropriate authentication information based on the authentication type.
+  #
   def miq_ssh_util_args
-    send("miq_ssh_util_args_#{resource.type.gsub('::', '_').downcase}")
-  end
-
-  def miq_ssh_util_args_manageiq_providers_redhat_inframanager_host
+    host = hostname || ipaddress
     authentication = find_credentials
-    [hostname || ipaddress, authentication.userid, authentication.password, nil, nil]
-  end
-
-  def miq_ssh_util_args_manageiq_providers_openstack_cloudmanager_vm
-    authentication = find_credentials
-    [hostname || ipaddress, authentication.userid, nil, nil, nil, { :key_data => authentication.auth_key, :passwordless_sudo => true }]
+    case authentication.type
+    when 'AuthPrivateKey', 'AuthToken'
+      [host, authentication.userid, nil, nil, nil, { :key_data => authentication.auth_key, :passwordless_sudo => true }]
+    when 'AuthUseridPassword'
+      [host, authentication.userid, authentication.password, nil, nil]
+    else
+      raise "Unsupported authentication type: #{authentication.type}"
+    end
   end
 
   # Run the specified ansible playbook using the ansible-playbook command. The
   # +extra_vars+ option should be a hash of key/value pairs which, if present,
   # will be passed to the '-e' flag.
   #
-  def ansible_playbook(playbook, extra_vars = {}, miq_task_id = nil, auth_type = nil)
+  def ansible_playbook(playbook, extra_vars = {}, miq_task_id = nil, auth_type = 'v2v')
     task = MiqTask.find(miq_task_id) if miq_task_id.present?
 
     host = hostname || ipaddress
 
     command = "ansible-playbook #{playbook} --inventory #{host}, --become --extra-vars=\"ansible_ssh_common_args='-o StrictHostKeyChecking=no'\""
 
-    auth = authentication_type(auth_type) || authentications.first
+    auth = find_credentials(auth_type)
     command << " --user #{auth.userid}"
 
     case auth
@@ -267,10 +286,15 @@ class ConversionHost < ApplicationRecord
       raise MiqException::MiqInvalidCredentialsError, _("Unknown auth type: #{auth.authtype}")
     end
 
-    extra_vars.each { |k, v| command << " --extra-vars '#{k}=#{v}'" }
+    command << " --extra-vars '#{extra_vars.to_json}'"
 
     result = AwesomeSpawn.run(command)
-    raise unless result.exit_status.zero?
+
+    if result.failure?
+      error_message = result.error.presence || result.output
+      _log.error("#{result.command_line} ==> #{error_message}")
+      raise
+    end
   ensure
     task&.update_context(task.context_data.merge!(File.basename(playbook, '.yml') => result.output)) unless result.nil?
     ssh_private_key_file&.unlink
