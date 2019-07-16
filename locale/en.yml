@@ -687,7 +687,6 @@ en:
     model:
       AuditEvent:               EVM Audit Event
       AvailabilityZone:         Availability Zone
-      BottleneckEvent:          Bottleneck Event
       HostAggregate:            Host Aggregate
       ChargebackVm:             Chargeback for Vms
       ChargebackContainerImage: Chargeback for Image
@@ -1025,7 +1024,6 @@ en:
       ems_physical_infras:         Physical Infrastructure Providers
       ems_storage:                 Storage Manager
       floating_ips:                Floating IP
-      load_balancer:               Load Balancer
       network_port:                Network Port
       network_router:              Network Router
       evm_owner:                   EVM Owner

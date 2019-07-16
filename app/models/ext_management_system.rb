@@ -2,6 +2,11 @@ class ExtManagementSystem < ApplicationRecord
   include CustomActionsMixin
   include SupportsFeatureMixin
 
+  def self.with_tenant(tenant_id)
+    tenant = Tenant.find(tenant_id)
+    where(:tenant_id => tenant.ancestor_ids + [tenant_id])
+  end
+
   def self.types
     leaf_subclasses.collect(&:ems_type)
   end
@@ -95,13 +100,17 @@ class ExtManagementSystem < ApplicationRecord
   has_many :host_conversion_hosts, :through => :hosts, :source => :conversion_host
   has_many :vm_conversion_hosts, :through => :vms, :source => :conversion_host
 
+  has_many :ems_licenses,   :foreign_key => :ems_id, :dependent => :destroy, :inverse_of => :ext_management_system
+  has_many :ems_extensions, :foreign_key => :ems_id, :dependent => :destroy, :inverse_of => :ext_management_system
+
   validates :name,     :presence => true, :uniqueness => {:scope => [:tenant_id]}
   validates :hostname, :presence => true, :if => :hostname_required?
   validate :hostname_uniqueness_valid?, :hostname_format_valid?, :if => :hostname_required?
-
   validate :validate_ems_enabled_when_zone_changed?, :validate_zone_not_maintenance_when_ems_enabled?
+  validate :validate_ems_type, :on => :create
 
-  scope :with_eligible_manager_types, ->(eligible_types) { where(:type => eligible_types) }
+  scope :with_eligible_manager_types, ->(eligible_types) { where(:type => Array(eligible_types).collect(&:to_s)) }
+  scope :assignable, -> { where.not(:type => "ManageIQ::Providers::EmbeddedAnsible::AutomationManager") }
 
   serialize :options
 
@@ -206,6 +215,7 @@ class ExtManagementSystem < ApplicationRecord
   virtual_column :supports_volume_resizing, :type => :boolean
   virtual_column :supports_cloud_object_store_container_create, :type => :boolean
   virtual_column :supports_cinder_volume_types, :type => :boolean
+  virtual_column :supports_volume_availability_zones, :type => :boolean
 
   virtual_aggregate :total_vcpus, :hosts, :sum, :total_vcpus
   virtual_aggregate :total_memory, :hosts, :sum, :ram_size
@@ -217,7 +227,7 @@ class ExtManagementSystem < ApplicationRecord
 
   default_value_for :enabled, true
 
-  after_save :change_maintenance_for_child_managers, :if => proc { |ems| ems.enabled_changed? }
+  after_save :change_maintenance_for_child_managers, :if => proc { |ems| ems.saved_change_to_enabled? }
 
   # Move ems to maintenance zone and backup current one
   # @param orig_zone [Integer] because of zone of child manager can be changed by parent manager's ensure_managers() callback
@@ -665,6 +675,10 @@ class ExtManagementSystem < ApplicationRecord
     supports_cinder_volume_types?
   end
 
+  def supports_volume_availability_zones
+    supports_volume_availability_zones?
+  end
+
   def get_reserve(field)
     (hosts + ems_clusters).inject(0) { |v, obj| v + (obj.send(field) || 0) }
   end
@@ -819,6 +833,10 @@ class ExtManagementSystem < ApplicationRecord
   end
 
   private
+
+  def validate_ems_type
+    errors.add(:base, "emstype #{self.class.name} is not supported for create") unless ExtManagementSystem.supported_types_and_descriptions_hash.key?(emstype)
+  end
 
   def disable!
     _log.info("Disabling EMS [#{name}] id [#{id}].")

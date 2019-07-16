@@ -47,12 +47,7 @@ class ServiceTemplate < ApplicationRecord
 
   validates :name, :presence => true
   belongs_to :tenant
-  # # These relationships are used to specify children spawned from a parent service
-  # has_many   :child_services, :class_name => "ServiceTemplate", :foreign_key => :service_template_id
-  # belongs_to :parent_service, :class_name => "ServiceTemplate", :foreign_key => :service_template_id
 
-  # # These relationships are used for resources that are processed as part of the service
-  # has_many   :vms_and_templates, :through => :service_resources, :source => :resource, :source_type => 'VmOrTemplate'
   has_many   :service_templates, :through => :service_resources, :source => :resource, :source_type => 'ServiceTemplate'
   has_many   :services
 
@@ -63,6 +58,7 @@ class ServiceTemplate < ApplicationRecord
 
   belongs_to :service_template_catalog
   belongs_to :zone
+  belongs_to :currency, :class_name => "ChargebackRateDetailCurrency", :inverse_of => false
 
   has_many   :dialogs, -> { distinct }, :through => :resource_actions
   has_many   :miq_schedules, :as => :resource, :dependent => :destroy
@@ -87,6 +83,11 @@ class ServiceTemplate < ApplicationRecord
   scope :with_existent_service_template_catalog_id, ->         { where.not(:service_template_catalog_id => nil) }
   scope :displayed,                                 ->         { where(:display => true) }
   scope :public_service_templates,                  ->         { where(:internal => [false, nil]) }
+
+  def self.with_tenant(tenant_id)
+    tenant = Tenant.find(tenant_id)
+    where(:tenant_id => tenant.ancestor_ids + [tenant_id])
+  end
 
   def self.with_additional_tenants
     includes(:service_template_tenants => :tenant)
@@ -160,8 +161,7 @@ class ServiceTemplate < ApplicationRecord
   end
 
   def destroy
-    parent_svcs = parent_services
-    unless parent_svcs.blank?
+    if parent_services.present?
       raise MiqException::MiqServiceError, _("Cannot delete a service that is the child of another service.")
     end
 
@@ -400,12 +400,10 @@ class ServiceTemplate < ApplicationRecord
   end
 
   def picture=(value)
-    if value
-      if value.kind_of?(Hash)
-        super(create_picture(value))
-      else
-        super
-      end
+    if value.kind_of?(Hash)
+      super(create_picture(value))
+    else
+      super
     end
   end
 
@@ -527,23 +525,19 @@ class ServiceTemplate < ApplicationRecord
 
   def construct_config_info
     config_info = {}
-    if service_resources.where(:resource_type => 'MiqRequest').exists?
-      config_info.merge!(service_resources.find_by(:resource_type => 'MiqRequest').resource.options.compact)
-    end
+
+    miq_request_resource = service_resources.find_by(:resource_type => 'MiqRequest')
+    config_info.merge!(miq_request_resource.resource.options.compact) if miq_request_resource
 
     config_info.merge!(resource_actions_info)
   end
 
   def resource_actions_info
-    config_info = {}
-    resource_actions.each do |resource_action|
-      resource_options = resource_action.slice(:dialog_id,
-                                               :configuration_template_type,
-                                               :configuration_template_id).compact
+    resource_actions.each_with_object({}) do |resource_action, config_info|
+      resource_options = resource_action.slice(:dialog_id, :configuration_template_type, :configuration_template_id).compact
       resource_options[:fqname] = resource_action.fqname
       config_info[resource_action.action.downcase.to_sym] = resource_options.symbolize_keys
     end
-    config_info
   end
 
   def generic_custom_buttons
@@ -551,14 +545,6 @@ class ServiceTemplate < ApplicationRecord
   end
 
   def adjust_service_type
-    svc_type = self.class::SERVICE_TYPE_ATOMIC
-    service_resources.try(:each) do |sr|
-      if sr.resource_type == 'Service' || sr.resource_type == 'ServiceTemplate'
-        svc_type = self.class::SERVICE_TYPE_COMPOSITE
-        break
-      end
-    end
-
-    self.service_type = svc_type
+    self.service_type = service_resources.any? { |st| st.resource_type.in?(['Service', 'ServiceTemplate']) } ? self.class::SERVICE_TYPE_COMPOSITE : self.class::SERVICE_TYPE_ATOMIC
   end
 end

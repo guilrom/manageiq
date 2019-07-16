@@ -16,6 +16,7 @@ class ConversionHost < ApplicationRecord
 
   validates :name, :presence => true
   validates :resource, :presence => true
+  validates :resource_id, :uniqueness => { :scope => :resource_type }
 
   validates :address,
     :uniqueness => true,
@@ -46,7 +47,7 @@ class ConversionHost < ApplicationRecord
   # TODO: Use the verify_credentials_ssh method in host.rb? Move that to the
   # AuthenticationMixin?
   #
-  def verify_credentials(auth_type = nil, options = {})
+  def verify_credentials(auth_type = 'v2v', options = {})
     if authentications.empty?
       check_ssh_connection
     else
@@ -55,7 +56,7 @@ class ConversionHost < ApplicationRecord
 
       auth = authentication_type(auth_type) || authentications.first
 
-      ssh_options = { :timeout => 10, :logger => $log, :verbose => :error }
+      ssh_options = { :timeout => 10, :use_agent => false }
 
       case auth
       when AuthUseridPassword
@@ -65,8 +66,11 @@ class ConversionHost < ApplicationRecord
         ssh_options[:auth_methods] = %w[publickey hostbased]
         ssh_options[:key_data] = auth.auth_key
       else
-        raise MiqException::MiqInvalidCredentialsError, _("Unknown auth type: #{auth.authtype}")
+        raise MiqException::MiqInvalidCredentialsError, _("Unknown auth type: %{auth_type}") % {:auth_type => auth.authtype}
       end
+
+      # Don't connect again if the authentication is still valid
+      return true if authentication_status_ok?(auth_type)
 
       # Options from STI subclasses will override the defaults we've set above.
       ssh_options.merge!(options)
@@ -91,15 +95,18 @@ class ConversionHost < ApplicationRecord
   #  - The number of concurrent tasks has not reached the limit.
   #
   def eligible?
-    source_transport_method.present? && verify_credentials && check_concurrent_tasks
+    source_transport_method.present? && authentication_check('v2v').first && check_concurrent_tasks
   end
 
   # Returns a boolean indicating whether or not the current number of active tasks
   # exceeds the maximum number of allowable concurrent tasks specified in settings.
   #
+  # Note that we force a reload of the active tasks via .count because we don't
+  # want that value cached.
+  #
   def check_concurrent_tasks
     max_tasks = max_concurrent_tasks || Settings.transformation.limits.max_concurrent_tasks_per_host
-    active_tasks.size < max_tasks
+    active_tasks.count < max_tasks
   end
 
   # Check to see if we can connect to the conversion host using a simple 'uname -a'
@@ -144,18 +151,30 @@ class ConversionHost < ApplicationRecord
   def apply_task_limits(path, limits = {})
     connect_ssh { |ssu| ssu.put_file(path, limits.to_json) }
   rescue MiqException::MiqInvalidCredentialsError, MiqException::MiqSshUtilHostKeyMismatch => err
-    raise "Failed to connect and apply limits in file '#{path}' with [#{err.class}: #{err}"
+    raise "Failed to connect and apply limits in file '#{path}' with [#{err.class}: #{err}]"
   rescue JSON::GeneratorError => err
     raise "Could not generate JSON from limits '#{limits}' with [#{err.class}: #{err}]"
   rescue StandardError => err
     raise "Could not apply the limits in '#{path}' on '#{resource.name}' with [#{err.class}: #{err}]"
   end
 
+  # Run the virt-v2v-wrapper.py script on the remote host and return a hash
+  # result from the parsed JSON output.
+  #
+  # Certain sensitive fields are filtered in the error messages to prevent
+  # that information from showing up in the UI or logs.
+  #
   def run_conversion(conversion_options)
+    ignore = %w[password fingerprint key]
+    filtered_options = conversion_options.clone.tap { |h| h.each { |k, _v| h[k] = "__FILTERED__" if ignore.any? { |i| k.to_s.end_with?(i) } } }
     result = connect_ssh { |ssu| ssu.shell_exec('/usr/bin/virt-v2v-wrapper.py', nil, nil, conversion_options.to_json) }
     JSON.parse(result)
-  rescue => e
-    raise "Starting conversion failed on '#{resource.name}' with [#{e.class}: #{e}]"
+  rescue MiqException::MiqInvalidCredentialsError, MiqException::MiqSshUtilHostKeyMismatch => err
+    raise "Failed to connect and run conversion using options #{filtered_options} with [#{err.class}: #{err}]"
+  rescue JSON::ParserError
+    raise "Could not parse result data after running virt-v2v-wrapper.py using options: #{filtered_options}. Result was: #{result}."
+  rescue StandardError => err
+    raise "Starting conversion failed on '#{resource.name}' with [#{err.class}: #{err}]"
   end
 
   # Kill a specific remote process over ssh, sending the specified +signal+, or 'TERM'
@@ -202,7 +221,7 @@ class ConversionHost < ApplicationRecord
     tag_resource_as('disabled')
   end
 
-  def enable_conversion_host_role(vmware_vddk_package_url = nil, vmware_ssh_private_key = nil, miq_task_id = nil)
+  def enable_conversion_host_role(vmware_vddk_package_url = nil, vmware_ssh_private_key = nil, openstack_tls_ca_certs = nil, miq_task_id = nil)
     raise "vmware_vddk_package_url is mandatory if transformation method is vddk" if vddk_transport_supported && vmware_vddk_package_url.nil?
     raise "vmware_ssh_private_key is mandatory if transformation_method is ssh" if ssh_transport_supported && vmware_ssh_private_key.nil?
     playbook = "/usr/share/v2v-conversion-host-ansible/playbooks/conversion_host_enable.yml"
@@ -211,7 +230,7 @@ class ConversionHost < ApplicationRecord
       :v2v_transport_method => source_transport_method,
       :v2v_vddk_package_url => vmware_vddk_package_url,
       :v2v_ssh_private_key  => vmware_ssh_private_key,
-      :v2v_ca_bundle        => resource.ext_management_system.connection_configurations['default'].certificate_authority
+      :v2v_ca_bundle        => openstack_tls_ca_certs || resource.ext_management_system.connection_configurations['default'].certificate_authority
     }.compact
     ansible_playbook(playbook, extra_vars, miq_task_id)
   ensure
@@ -276,31 +295,19 @@ class ConversionHost < ApplicationRecord
     raise e
   end
 
-  # Collect appropriate authentication information based on the resource type.
-  #--
-  # TODO: This should be handled by a ConversionHost subclass within each supported provider.
+  # Collect appropriate authentication information based on the authentication type.
   #
   def miq_ssh_util_args
-    send("miq_ssh_util_args_#{resource.type.gsub('::', '_').downcase}")
-  end
-
-  # For the Redhat provider, use the userid and password associated directly with the resource.
-  #--
-  # TODO: Move this to ManageIQ::Providers::Redhat::InfraManager::ConversionHost
-  #
-  def miq_ssh_util_args_manageiq_providers_redhat_inframanager_host
+    host = hostname || ipaddress
     authentication = find_credentials
-    [hostname || ipaddress, authentication.userid, authentication.password, nil, nil]
-  end
-
-  # For the OpenStack provider, use the first authentication containing an ssh keypair that has
-  # both a userid and auth key.
-  #--
-  # TODO: Move this to ManageIQ::Providers::OpenStack::CloudManager::ConversionHost
-  #
-  def miq_ssh_util_args_manageiq_providers_openstack_cloudmanager_vm
-    authentication = find_credentials
-    [hostname || ipaddress, authentication.userid, nil, nil, nil, { :key_data => authentication.auth_key, :passwordless_sudo => true }]
+    case authentication.type
+    when 'AuthPrivateKey', 'AuthToken'
+      [host, authentication.userid, nil, nil, nil, { :key_data => authentication.auth_key, :passwordless_sudo => true }]
+    when 'AuthUseridPassword'
+      [host, authentication.userid, authentication.password, nil, nil]
+    else
+      raise "Unsupported authentication type: #{authentication.type}"
+    end
   end
 
   # Run the specified ansible playbook using the ansible-playbook command. The
@@ -329,13 +336,18 @@ class ConversionHost < ApplicationRecord
       end
       command << " --private-key #{ssh_private_key_file.path}"
     else
-      raise MiqException::MiqInvalidCredentialsError, _("Unknown auth type: #{auth.authtype}")
+      raise MiqException::MiqInvalidCredentialsError, _("Unknown auth type: %{auth_type}") % {:auth_type => auth.authtype}
     end
 
-    extra_vars.each { |k, v| command << " --extra-vars '#{k}=#{v}'" }
+    command << " --extra-vars '#{extra_vars.to_json}'"
 
     result = AwesomeSpawn.run(command)
-    raise unless result.exit_status.zero?
+
+    if result.failure?
+      error_message = result.error.presence || result.output
+      _log.error("#{result.command_line} ==> #{error_message}")
+      raise
+    end
   ensure
     task&.update_context(task.context_data.merge!(File.basename(playbook, '.yml') => result.output)) unless result.nil?
     ssh_private_key_file&.unlink

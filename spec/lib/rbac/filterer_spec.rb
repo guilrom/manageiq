@@ -1030,8 +1030,7 @@ describe Rbac::Filterer do
           :max_disk_usage_rate_average     => {},
           :min_net_usage_rate_average      => {},
           :max_net_usage_rate_average      => {},
-          :v_derived_storage_used          => {},
-          :resource                        => {}
+          :v_derived_storage_used          => {}
         }
       end
 
@@ -1812,8 +1811,8 @@ describe Rbac::Filterer do
               FactoryBot.create(network_model.underscore,  :ext_management_system => network_manager_1)
             end
 
-            context "when records match belogns to filter" do
-              it "lists records of #{network_model} manager according to belongsto filter" do
+            context "when records match belongs to filter" do
+              it "lists records of #{network_model} manager according to belongs to filter" do
                 User.with_user(user) do
                   results = described_class.search(:class => network_model).first
                   expect(results).to match_array([network_object])
@@ -1822,7 +1821,7 @@ describe Rbac::Filterer do
               end
             end
 
-            context "when records don't match belogns to filter" do
+            context "when records don't match belongs to filter" do
               before do
                 group.entitlement = Entitlement.new
                 group.entitlement.set_managed_filters([])
@@ -1901,7 +1900,6 @@ describe Rbac::Filterer do
         CloudNetwork
         CloudSubnet
         FloatingIp
-        LoadBalancer
         NetworkPort
         NetworkRouter
         SecurityGroup
@@ -2201,7 +2199,7 @@ describe Rbac::Filterer do
                               :named_scope         => nil,
                               :display_filter_hash => nil,
                               :conditions          => nil,
-                              :include_for_find    => {:description => {}, :minimum_value => {}, :maximum_value => {}}
+                              :include_for_find    => {:description => {}}
                              ).first
 
         expect(results.length).to eq(VmdbDatabaseSetting.all.length)
@@ -2242,7 +2240,7 @@ describe Rbac::Filterer do
                                          :extra_cols       => "v_total_vms",
                                          :use_sql_view     => true,
                                          :user             => user,
-                                         :include_for_find => {:service_templates => :pictures},
+                                         :include_for_find => {:service_template => :picture},
                                          :order            => "services.name desc")
         expect(results.first).to eq([service1])
         expect(results.last[:auth_count]).to eq(1)

@@ -11,6 +11,7 @@
 .loadpath
 .project
 .redcar/
+.rspec-local
 .rubocop-*
 .ruby-version
 .sass-cache/
@@ -50,6 +51,9 @@ config/initializers/*.local.rb
 config/settings.local.yml
 config/settings/*.local.yml
 config/environments/*.local.yml
+
+# content/
+content/ansible_consolidated
 
 # db/
 db/*.sqlite3

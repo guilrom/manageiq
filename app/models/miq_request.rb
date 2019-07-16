@@ -89,6 +89,9 @@ class MiqRequest < ApplicationRecord
       :PhysicalServerProvisionRequest      => {
         :provision_physical_server => N_("Physical Server Provision")
       },
+      :PhysicalServerFirmwareUpdateRequest => {
+        :physical_server_firmware_update => N_("Physical Server Firmware Update")
+      },
       :ServiceRetireRequest                => {
         :service_retire => N_("Service Retire")
       },
@@ -529,7 +532,7 @@ class MiqRequest < ApplicationRecord
 
     if process_on_create?
       call_automate_event_queue("request_created")
-      approve(requester, "Auto-Approved") if auto_approve
+      approve(User.super_admin.userid, "Auto-Approved") if auto_approve
       reload if auto_approve
     end
 

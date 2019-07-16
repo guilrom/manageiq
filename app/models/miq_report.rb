@@ -123,12 +123,8 @@ class MiqReport < ApplicationRecord
     reports.each_with_object({}) { |report, hash| hash[report.name] = report.id }
   end
 
-  def self.get_col_type(path)
-    MiqExpression.get_col_type(path)
-  end
-
   def self.get_col_info(path)
-    data_type = get_col_type(path)
+    data_type = MiqExpression.parse_field_or_tag(path).try(:column_type)
     {
       :data_type         => data_type,
       :available_formats => get_available_formats(path, data_type),
@@ -182,11 +178,22 @@ class MiqReport < ApplicationRecord
     sortby ? col_order.index(sortby.first) : 0
   end
 
-  def column_is_hidden?(col)
+  def column_is_hidden?(col, controller = nil)
     return false unless col_options
 
     @hidden_cols ||= col_options.keys.each_with_object([]) do |c, a|
-      a << c if col_options[c][:hidden]
+      if col_options[c][:hidden]
+        a << c
+      else
+        display_method = col_options[c][:display_method]&.to_sym
+        is_display_method_available = defined?(controller.class::DISPLAY_GTL_METHODS) && controller.class::DISPLAY_GTL_METHODS.include?(display_method) && controller.respond_to?(display_method)
+
+        if controller && display_method && is_display_method_available
+          # when this display_method returns true it means that column is displayed
+          is_column_hidden = !controller.try(display_method)
+          a << c if is_column_hidden
+        end
+      end
     end
 
     @hidden_cols.include?(col.to_s)
@@ -267,7 +274,7 @@ class MiqReport < ApplicationRecord
       if col_order&.include?(attr)
         attr
       else
-        raise ArgumentError, N_("#{attr} is not a valid attribute for #{name}")
+        raise ArgumentError, N_("%{attribute} is not a valid attribute for %{name}") % {:attribute => attr, :name => name}
       end
     end.compact
   end
@@ -294,6 +301,10 @@ class MiqReport < ApplicationRecord
     result_set_filtered = formatted_result_set.select { |x| x[options[:filter_column]].include?(options[:filter_string]) }
 
     [result_set_filtered, result_set_filtered.count]
+  end
+
+  def self.default_use_sql_view
+    false
   end
 
   private
