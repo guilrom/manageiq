@@ -83,10 +83,10 @@ describe ManageIQ::Providers::EmbeddedAnsible::AutomationManager::PlaybookRunner
     end
 
     context 'with launch options' do
-      let(:options) { {:job_template_ref => 'jt1', :extra_vars => {:thing => "stuff"}} }
+      let(:options) { {:job_template_ref => 'jt1', :extra_vars => {:thing => "stuff"}, :verbosity => "4", :become_enabled => true} }
       it 'passes them to the job' do
         expect(ManageIQ::Providers::EmbeddedAnsible::AutomationManager::Job).to receive(:create_job)
-          .with(an_instance_of(ManageIQ::Providers::EmbeddedAnsible::AutomationManager::ConfigurationScript), :hosts => ["localhost"], :extra_vars => {:thing => "stuff"})
+          .with(an_instance_of(ManageIQ::Providers::EmbeddedAnsible::AutomationManager::ConfigurationScript), :hosts => ["localhost"], :extra_vars => {:thing => "stuff"}, :verbosity => "4", :become_enabled => true)
           .and_return(double(:id => 'jb1'))
         expect(subject).to receive(:queue_signal)
         subject.launch_ansible_tower_job
@@ -98,6 +98,37 @@ describe ManageIQ::Providers::EmbeddedAnsible::AutomationManager::PlaybookRunner
       it 'passes them to the job' do
         expect(ManageIQ::Providers::EmbeddedAnsible::AutomationManager::Job).to receive(:create_job)
           .with(an_instance_of(ManageIQ::Providers::EmbeddedAnsible::AutomationManager::ConfigurationScript), :hosts => %w[192.0.2.0 192.0.2.1 192.0.2.2])
+          .and_return(double(:id => 'jb1'))
+        expect(subject).to receive(:queue_signal)
+        subject.launch_ansible_tower_job
+      end
+    end
+
+    context 'with credentials' do
+      let(:cloud_credential)   { FactoryBot.create(:embedded_ansible_amazon_credential) }
+      let(:machine_credential) { FactoryBot.create(:embedded_ansible_machine_credential) }
+      let(:network_credential) { FactoryBot.create(:embedded_ansible_network_credential) }
+      let(:vault_credential)   { FactoryBot.create(:embedded_ansible_vault_credential) }
+
+      let(:options) do
+        {
+          :cloud_credential_id   => cloud_credential.id,
+          :credential_id         => machine_credential.id,
+          :network_credential_id => network_credential.id,
+          :vault_credential_id   => vault_credential.id
+        }
+      end
+
+      it 'passes them to the job' do
+        expected_options = {
+          :hosts              => ["localhost"],
+          :cloud_credential   => cloud_credential.native_ref,
+          :credential         => machine_credential.native_ref,
+          :network_credential => network_credential.native_ref,
+          :vault_credential   => vault_credential.native_ref
+        }
+        expect(ManageIQ::Providers::EmbeddedAnsible::AutomationManager::Job).to receive(:create_job)
+          .with(an_instance_of(ManageIQ::Providers::EmbeddedAnsible::AutomationManager::ConfigurationScript), expected_options)
           .and_return(double(:id => 'jb1'))
         expect(subject).to receive(:queue_signal)
         subject.launch_ansible_tower_job

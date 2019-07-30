@@ -31,10 +31,14 @@ module Ansible
         {}
       end
 
-      def write_password_file
+      def write_config_files
       end
 
       private
+
+      def initialize_password_data
+        File.exist?(password_file) ? YAML.load_file(password_file) : {}
+      end
 
       def password_file
         File.join(env_dir, "passwords")

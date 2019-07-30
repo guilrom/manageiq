@@ -11,7 +11,12 @@ module Vmdb
     end
 
     def self.CODENAME
-      "Ivanchuk".freeze
+      "J-release".freeze
+    end
+
+    def self.RELEASE
+      release_file = File.join(File.expand_path(Rails.root), "RELEASE")
+      File.exist?(release_file) ? File.read(release_file).strip : self.CODENAME
     end
 
     def self.BANNER
@@ -57,6 +62,7 @@ module Vmdb
       fh.info(init_msg)
       fh.info(border)
 
+      fh.info("Release: #{self.RELEASE}")
       fh.info("Version: #{self.VERSION}")
       fh.info("Build:   #{self.BUILD}")
       fh.info("Codename: #{self.CODENAME}")

@@ -11,7 +11,6 @@ require File.join(Bundler::Plugin.index.load_paths("bundler-inject")[0], "bundle
 #
 
 gem "manageiq-gems-pending", ">0", :require => 'manageiq-gems-pending', :git => "https://github.com/ManageIQ/manageiq-gems-pending.git", :branch => "master"
-gem "manageiq-loggers",      ">0", :require => false,                   :git => "https://github.com/ManageIQ/manageiq-loggers",          :branch => "master"
 
 # Modified gems for gems-pending.  Setting sources here since they are git references
 gem "handsoap", "~>0.2.5", :require => false, :git => "https://github.com/ManageIQ/handsoap.git", :tag => "v0.2.5-5"
@@ -26,7 +25,7 @@ end
 manageiq_plugin "manageiq-schema"
 
 # Unmodified gems
-gem "activerecord-virtual_attributes", "~>1.3.1"
+gem "activerecord-virtual_attributes", "~>1.4.0"
 gem "activerecord-session_store",     "~>1.1"
 gem "acts_as_tree",                   "~>2.7" # acts_as_tree needs to be required so that it loads before ancestry
 gem "ancestry",                       "~>3.0.7",       :require => false
@@ -50,6 +49,7 @@ gem "kubeclient",                     "~>4.0",         :require => false # For s
 gem "linux_admin",                    "~>1.2.1",       :require => false
 gem "log_decorator",                  "~>0.1",         :require => false
 gem "manageiq-api-client",            "~>0.3.3",       :require => false
+gem "manageiq-loggers",               "~>0.3.0",       :require => false
 gem "manageiq-messaging",             "~>0.1.4",       :require => false
 gem "manageiq-password",              "~>0.3",         :require => false
 gem "manageiq-postgres_ha_admin",     "~>3.1",         :require => false
@@ -155,7 +155,7 @@ end
 
 group :ovirt, :manageiq_default do
   manageiq_plugin "manageiq-providers-ovirt"
-  gem "ovirt_metrics",                  "~>2.0.0",       :require => false
+  gem "ovirt_metrics",                  "~>3.0.0",       :require => false
 end
 
 group :scvmm, :manageiq_default do
@@ -251,7 +251,7 @@ unless ENV["APPLIANCE"]
     gem "faker",            "~>1.8",    :require => false
     gem "timecop",          "~>0.7.3",  :require => false
     gem "vcr",              "~>3.0.2",  :require => false
-    gem "webmock",          "~>2.3.1",  :require => false
+    gem "webmock",          "~>3.6.0",  :require => false
   end
 
   group :development, :test do

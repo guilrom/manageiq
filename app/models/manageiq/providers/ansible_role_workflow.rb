@@ -1,6 +1,7 @@
 class ManageIQ::Providers::AnsibleRoleWorkflow < ManageIQ::Providers::AnsibleRunnerWorkflow
-  def self.job_options(env_vars, extra_vars, role_options, timeout, poll_interval, hosts, credentials)
+  def self.job_options(env_vars, extra_vars, role_options, timeout, poll_interval, hosts, credentials, verbosity, become_enabled)
     {
+      :become_enabled  => become_enabled,
       :credentials     => credentials,
       :env_vars        => env_vars,
       :extra_vars      => extra_vars,
@@ -9,7 +10,8 @@ class ManageIQ::Providers::AnsibleRoleWorkflow < ManageIQ::Providers::AnsibleRun
       :roles_path      => role_options[:roles_path],
       :role_skip_facts => role_options[:role_skip_facts],
       :timeout         => timeout,
-      :poll_interval   => poll_interval
+      :poll_interval   => poll_interval,
+      :verbosity       => verbosity
     }
   end
 

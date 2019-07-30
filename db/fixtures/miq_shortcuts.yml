@@ -9,6 +9,11 @@
   :url: /report/explorer
   :rbac_feature_name: miq_report
   :startup: true
+- :name: miq_capacity_utilization
+  :description: Cloud Intel / Utilization
+  :url: /utilization
+  :rbac_feature_name: utilization
+  :startup: true
 - :name: chargeback
   :description: Overview / Chargeback
   :url: /chargeback/explorer
@@ -273,6 +278,21 @@
   :description: Compute / Containers / Topology
   :url: /container_topology
   :rbac_feature_name: container_topology_view
+  :startup: true
+- :name: migration
+  :description: Migration / Migration Plans
+  :url: /migration/#plans
+  :rbac_feature_name: migration
+  :startup: true
+- :name: mappings
+  :description: Migration / Infrastructure Mappings
+  :url: /migration/#mappings
+  :rbac_feature_name: mappings
+  :startup: true
+- :name: migration_settings
+  :description: Migration / Migration Settings
+  :url: /migration/#settings
+  :rbac_feature_name: migration_settings
   :startup: true
 - :name: configuration_management
   :description: Configuration / Management

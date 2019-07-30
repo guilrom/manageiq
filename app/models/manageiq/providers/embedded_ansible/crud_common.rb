@@ -2,7 +2,7 @@ module ManageIQ::Providers::EmbeddedAnsible::CrudCommon
   extend ActiveSupport::Concern
 
   module ClassMethods
-    def queue(zone, instance_id, method_name, args, action, auth_user)
+    def queue(instance_id, method_name, args, action, auth_user)
       task_opts = {
         :action => action,
         :userid => auth_user || "system"
@@ -14,7 +14,7 @@ module ManageIQ::Providers::EmbeddedAnsible::CrudCommon
         :class_name  => name,
         :method_name => method_name,
         :role        => "embedded_ansible",
-        :zone        => zone
+        :zone        => nil
       }
       queue_opts[:instance_id] = instance_id if instance_id
       MiqTask.generic_action_with_callback(task_opts, queue_opts)
@@ -45,11 +45,15 @@ module ManageIQ::Providers::EmbeddedAnsible::CrudCommon
       end
     end
 
+    def encrypt_queue_params(params)
+      params
+    end
+
     def create_in_provider_queue(manager_id, params, auth_user = nil)
       manager = parent.find(manager_id)
       action = "Creating #{self::FRIENDLY_NAME}"
       action << " (name=#{params[:name]})" if params[:name]
-      queue(manager.my_zone, nil, "create_in_provider", [manager_id, params], action, auth_user)
+      queue(nil, "create_in_provider", [manager_id, encrypt_queue_params(params)], action, auth_user)
     end
 
     private
@@ -84,8 +88,12 @@ module ManageIQ::Providers::EmbeddedAnsible::CrudCommon
     self
   end
 
+  def encrypt_queue_params(params)
+    self.class.encrypt_queue_params(params)
+  end
+
   def update_in_provider_queue(params, auth_user = nil)
-    queue("update_in_provider", [params], "Updating", auth_user)
+    queue("update_in_provider", [encrypt_queue_params(params)], "Updating", auth_user)
   end
 
   def raw_delete_in_provider
@@ -108,7 +116,7 @@ module ManageIQ::Providers::EmbeddedAnsible::CrudCommon
   def queue(method_name, args, action_prefix, auth_user)
     action = "#{action_prefix} #{self.class::FRIENDLY_NAME}"
     action << " (name=#{name})" if respond_to?(:name)
-    self.class.queue(manager.my_zone, id, method_name, args, action, auth_user)
+    self.class.queue(id, method_name, args, action, auth_user)
   end
 
   def notify(op_type, params = {}, &block)

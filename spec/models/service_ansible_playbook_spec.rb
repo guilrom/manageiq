@@ -48,6 +48,9 @@ describe(ServiceAnsiblePlaybook) do
           :credential_id       => credential_0.id,
           :vault_credential_id => credential_3.id,
           :playbook_id         => 10,
+          :execution_ttl       => "5",
+          :verbosity           => "3",
+          :become_enabled      => true,
           :extra_vars          => {
             "var1" => {:default => "default_val1"},
             :var2  => {:default => "default_val2"},
@@ -122,7 +125,10 @@ describe(ServiceAnsiblePlaybook) do
         expect(basic_service.options[:provision_job_options]).to include(
           :hosts            => "default_host1,default_host2",
           :credential       => credential_0.native_ref,
-          :vault_credential => credential_3.native_ref
+          :vault_credential => credential_3.native_ref,
+          :execution_ttl    => "5",
+          :verbosity        => "3",
+          :become_enabled   => true
         )
       end
     end
@@ -135,6 +141,9 @@ describe(ServiceAnsiblePlaybook) do
           :hosts            => "host1,host2",
           :credential       => credential_1.native_ref,
           :vault_credential => credential_3.native_ref,
+          :execution_ttl    => "5",
+          :verbosity        => "3",
+          :become_enabled   => true,
           :extra_vars       => {
             'var1' => 'value1',
             'var2' => 'value2',
@@ -160,6 +169,9 @@ describe(ServiceAnsiblePlaybook) do
             :hosts            => "default_host1,default_host2",
             :credential       => credential_0.native_ref,
             :vault_credential => credential_3.native_ref,
+            :execution_ttl    => "5",
+            :verbosity        => "3",
+            :become_enabled   => true,
             :extra_vars       => {
               'var1' => 'default_val1',
               'var2' => 'default_val2',
@@ -183,7 +195,7 @@ describe(ServiceAnsiblePlaybook) do
     end
   end
 
-  describe '#execute' do
+  describe '#launch_ansible_job' do
     let(:control_extras) { {'a' => 'A', 'b' => 'B', 'c' => 'C'} }
     before do
       FactoryBot.create(:miq_region, :region => ApplicationRecord.my_region_number)
@@ -207,7 +219,7 @@ describe(ServiceAnsiblePlaybook) do
         expect(opts).to include(expected_opts)
         runner_job
       end
-      loaded_service.execute(action)
+      loaded_service.launch_ansible_job(action)
       expected_job_attributes = {
         :id                           => runner_job.id,
         :hosts                        => config_info_options.fetch_path(:config_info, :provision, :hosts).split(','),
